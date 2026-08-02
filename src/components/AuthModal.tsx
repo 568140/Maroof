@@ -62,9 +62,9 @@ export default function AuthModal({
     }
 
     const cleanPhone = phone.trim().replace(/\s+/g, '');
-    const phoneRegex = /^(77|73|71|70|78)\d{7}$/;
+    const phoneRegex = /^7\d{7,8}$/;
     if (!phoneRegex.test(cleanPhone)) {
-      showToast('يجب إدخال رقم هاتف يمني صحيح مكون من 9 أرقام.', 'error');
+      showToast('يجب إدخال رقم هاتف يمني صحيح (8 أو 9 أرقام يبدأ بـ 7).', 'error');
       return;
     }
 

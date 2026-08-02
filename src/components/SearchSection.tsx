@@ -174,9 +174,9 @@ export default function SearchSection({
     }
 
     const cleanNum = phoneQuery.trim().replace(/\s+/g, '');
-    const phoneRegex = /^(77|73|71|70|78)\d{7}$/;
+    const phoneRegex = /^7\d{7,8}$/;
     if (!phoneRegex.test(cleanNum)) {
-      setErrorState('يجب إدخال رقم يمني صحيح مكون من 9 أرقام (مثال: 771234567).');
+      setErrorState('يجب إدخال رقم يمني صحيح (8 أو 9 أرقام يبدأ بـ 7، مثال: 771234567 أو 74919194).');
       return;
     }
 
