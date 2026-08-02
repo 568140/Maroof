@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, Smartphone, Cpu, ShieldAlert, KeyRound, RefreshCw, X, HelpCircle, UserCheck } from 'lucide-react';
 import { User } from '../types';
+import { safeFetchJson } from '../utils/apiHelper';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -72,7 +73,7 @@ export default function AuthModal({
 
     try {
       // API registration call
-      const response = await fetch('/api/auth/register', {
+      const data = await safeFetchJson('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -83,14 +84,6 @@ export default function AuthModal({
         })
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'حدث خطأ أثناء الاتصال بالخادم.');
-      }
-
-      // Check if Stage 2 (Simulated OTP SMS activation) is enabled by user's setting, if requested or simulated
-      // Let's do a short elegant simulation of OTP to show that we are Stage-2 ready!
       showToast('تم التحقق من بصمة الجهاز ومصادقة الرقم بنجاح.', 'success');
       onRegisterSuccess(data.user);
       onClose();

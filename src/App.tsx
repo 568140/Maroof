@@ -12,6 +12,7 @@ import AdminDashboard from './components/AdminDashboard';
 import AuthModal from './components/AuthModal';
 import AdBanner from './components/AdBanner';
 import { User, Ad, Transaction, SystemSettings } from './types';
+import { safeFetchJson } from './utils/apiHelper';
 
 interface Toast {
   id: string;
@@ -109,11 +110,8 @@ export default function App() {
   // Fetch transaction log for active user
   const fetchUserTransactions = async (phone: string) => {
     try {
-      const res = await fetch(`/api/transactions?phone=${phone}`);
-      if (res.ok) {
-        const txData = await res.json();
-        setTransactions(txData);
-      }
+      const txData = await safeFetchJson(`/api/transactions?phone=${phone}`);
+      setTransactions(txData);
     } catch (err) {
       console.warn('Could not fetch ledger logs:', err);
     }
@@ -123,12 +121,9 @@ export default function App() {
   const refreshUserProfile = async () => {
     if (!currentUser) return;
     try {
-      const meRes = await fetch(`/api/auth/me?phone=${currentUser.phone}`);
-      if (meRes.ok) {
-        const userData = await meRes.json();
-        setCurrentUser(userData);
-        fetchUserTransactions(userData.phone);
-      }
+      const userData = await safeFetchJson(`/api/auth/me?phone=${currentUser.phone}`);
+      setCurrentUser(userData);
+      fetchUserTransactions(userData.phone);
     } catch (e) {
       console.warn('Profile refresh error:', e);
     }
@@ -147,12 +142,7 @@ export default function App() {
     if (!currentUser) throw new Error('يرجى تسجيل الدخول أولاً للبحث.');
 
     const url = `/api/search${type === 'advanced' ? '/advanced' : ''}?query=${query}&phone=${currentUser.phone}`;
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || 'حدث خطأ في البحث.');
-    }
+    const data = await safeFetchJson(url);
 
     // Refresh profile state for balance decrement
     refreshUserProfile();
@@ -163,7 +153,7 @@ export default function App() {
   const handleSyncContacts = async (contacts: { name: string; phone: string }[]) => {
     if (!currentUser) throw new Error('يرجى تسجيل الدخول أولاً لمزامنة الأرقام.');
 
-    const response = await fetch('/api/contacts/sync', {
+    const data = await safeFetchJson('/api/contacts/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -171,12 +161,6 @@ export default function App() {
         contacts
       })
     });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || 'فشلت المزامنة.');
-    }
 
     // Update profile
     setCurrentUser(data.user);
@@ -188,7 +172,7 @@ export default function App() {
   const handlePlayAdReward = async (adId: string) => {
     if (!currentUser) throw new Error('مطلوب تسجيل الدخول للحصول على مكافأة الإعلان.');
 
-    const response = await fetch('/api/ads/view', {
+    const data = await safeFetchJson('/api/ads/view', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -196,12 +180,6 @@ export default function App() {
         phone: currentUser.phone
       })
     });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || 'خطأ أثناء تسجيل مكافأة الإعلان.');
-    }
 
     setCurrentUser(data.user);
     fetchUserTransactions(data.user.phone);
@@ -218,7 +196,7 @@ export default function App() {
 
   // Update Settings via admin tab
   const handleUpdateSettings = async (newSettings: SystemSettings) => {
-    const response = await fetch('/api/admin/settings', {
+    const data = await safeFetchJson('/api/admin/settings', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -226,12 +204,6 @@ export default function App() {
       },
       body: JSON.stringify(newSettings)
     });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || 'فشل تحديث الإعدادات.');
-    }
 
     setSystemSettings(data.settings);
   };

@@ -20,12 +20,22 @@ import {
 } from 'firebase/firestore';
 import { User, Contact, Ad, Transaction, SystemSettings, AnalyticsStats } from './types';
 
-// Load Firebase configuration dynamically from firebase-applet-config.json
-let firebaseConfig: any = {};
+// Load Firebase configuration dynamically from firebase-applet-config.json or use fallback
+let firebaseConfig: any = {
+  projectId: process.env.FIREBASE_PROJECT_ID || "master-carport-g71nt",
+  appId: process.env.FIREBASE_APP_ID || "1:731432445526:web:f698b6f50b497cf99f3df7",
+  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyD7unLBRol7TacRbiDF2WJMnmk84n5W02c",
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "master-carport-g71nt.firebaseapp.com",
+  firestoreDatabaseId: process.env.FIREBASE_DATABASE_ID || "ai-studio-maarouf-5ead1727-a3c3-4a44-8734-29127a39a53b",
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "master-carport-g71nt.firebasestorage.app",
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "731432445526",
+};
+
 try {
   const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
   if (fs.existsSync(configPath)) {
-    firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const loaded = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    firebaseConfig = { ...firebaseConfig, ...loaded };
   }
 } catch (err) {
   console.error('Error loading firebase-applet-config.json:', err);

@@ -4,9 +4,12 @@ import { createServer as createViteServer } from 'vite';
 import { DbService } from './src/dbService';
 import { User, Contact, Ad, Transaction, SystemSettings } from './src/types';
 
-async function startServer() {
+let expressAppInstance: express.Express | null = null;
+
+export async function createExpressApp() {
+  if (expressAppInstance) return expressAppInstance;
+
   const app = express();
-  const PORT = 3000;
 
   // Initialize Firestore database connections and push initial seed data
   await DbService.init();
@@ -778,8 +781,15 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
     }
   });
 
-  // --- VITE MIDDLEWARE CONFIGURATION ---
+  expressAppInstance = app;
+  return app;
+}
 
+async function startServer() {
+  const PORT = 3000;
+  const app = await createExpressApp();
+
+  // --- VITE MIDDLEWARE CONFIGURATION ---
   if (process.env.NODE_ENV !== 'production') {
     // In development mode, load Vite Dev Server
     const vite = await createViteServer({
