@@ -1,0 +1,6 @@
+{
+  "name": "معروف | Maarouf",
+  "description": "منصة معروف الرقمية الفاخرة لمعرفة هوية الأرقام اليمنية ومزامنة جهات الاتصال ومكافحة الاحتيال",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
