@@ -26,8 +26,13 @@ export async function createExpressApp() {
     next();
   });
 
-  // Express JSON Body Parser (increased limit for contacts sync payload)
-  app.use(express.json({ limit: '15mb' }));
+  // Express JSON Body Parser (safe for Vercel Serverless where req.body might already be pre-parsed)
+  app.use((req, res, next) => {
+    if (req.body && typeof req.body === 'object') {
+      return next();
+    }
+    express.json({ limit: '15mb' })(req, res, next);
+  });
 
   // Normalize incoming URLs to handle Vercel rewrites and path variations
   app.use((req, res, next) => {
@@ -858,14 +863,24 @@ async function startServer() {
 // NOT inside serverless environments (Vercel, AWS Lambda, Netlify).
 const isServerless = Boolean(
   process.env.VERCEL || 
+  process.env.VERCEL_ENV ||
   process.env.AWS_LAMBDA_FUNCTION_NAME || 
   process.env.LAMBDA_TASK_ROOT ||
   process.env.NETLIFY
 );
 
-if (!isServerless) {
+const isDirectRun = Boolean(
+  process.argv[1] && (
+    process.argv[1].endsWith('server.ts') || 
+    process.argv[1].endsWith('server.cjs') ||
+    process.argv[1].endsWith('server.js')
+  )
+);
+
+if (!isServerless && isDirectRun) {
   startServer().catch(err => {
     console.error('[Maarouf Server] Failed to start:', err);
   });
 }
+
 
