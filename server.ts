@@ -34,16 +34,13 @@ export async function createExpressApp() {
     // Fix duplicate /api/api/ prefix if present
     if (req.url.startsWith('/api/api/')) {
       req.url = req.url.replace('/api/api/', '/api/');
-    } else if (
-      !req.url.startsWith('/api') &&
-      !req.url.startsWith('/@') &&
-      !req.url.startsWith('/src') &&
-      !req.url.startsWith('/assets') &&
-      !req.url.startsWith('/favicon') &&
-      !req.url.includes('.')
-    ) {
-      // If Vercel stripped /api prefix (e.g. /auth/register -> /api/auth/register)
-      req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
+    } else {
+      // Only prefix with /api if this is specifically an API route called without /api
+      const apiPrefixes = ['/auth', '/contacts', '/search', '/ads', '/settings', '/transactions', '/admin', '/user'];
+      const isKnownApi = apiPrefixes.some(prefix => req.path.startsWith(prefix));
+      if (isKnownApi && !req.url.startsWith('/api')) {
+        req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
+      }
     }
 
     if (req.path.startsWith('/api')) {
@@ -53,7 +50,7 @@ export async function createExpressApp() {
   });
 
   // Health and Diagnostic endpoints
-  app.get(['/api', '/api/health', '/health'], (req, res) => {
+  app.get(['/api/health', '/api/status'], (req, res) => {
     res.json({
       status: 'ok',
       service: 'Maarouf API Server',
