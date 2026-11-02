@@ -1136,9 +1136,9 @@ if (!isServerless && isDirectRun) {
   });
 }
 
-// api/index.ts
+// src/serverless.ts
 var app2 = createExpressApp();
-var index_default = app2;
+var serverless_default = app2;
 export {
-  index_default as default
+  serverless_default as default
 };
