@@ -3,7 +3,7 @@ export async function safeFetchJson(url: string, options?: RequestInit): Promise
   try {
     response = await fetch(url, options);
   } catch (netErr: any) {
-    throw new Error('تعذر الاتصال بالخادم. يرجى التحقق من الاتصال بالشبكة.');
+    throw new Error('تعذر الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت.');
   }
 
   const contentType = response.headers.get('content-type') || '';
@@ -26,10 +26,17 @@ export async function safeFetchJson(url: string, options?: RequestInit): Promise
     const text = await response.text().catch(() => '');
     console.error('Non-JSON response received from server:', response.status, text);
     
+    let extra = '';
+    if (text.includes('FUNCTION_INVOCATION_FAILED')) {
+      extra = ' - تعذر استدعاء دالة Vercel Serverless';
+    } else if (text.includes('FUNCTION_INVOCATION_TIMEOUT')) {
+      extra = ' - استغرق الطلب وقتاً أطول من المسموح';
+    }
+
     if (response.status === 404) {
-      throw new Error('لم يتم العثور على مسار الخدمة البرمجية (API 404). تأكد من ضبط إعدادات الاستضافة لـ Node.js / Vercel Serverless.');
+      throw new Error('لم يتم العثور على مسار الخدمة البرمجية (API 404).' + extra);
     }
     
-    throw new Error(`خطأ من خادم الاستضافة (${response.status}): لم يتم إرجاع استجابة JSON من الخادم.`);
+    throw new Error(`خطأ من خادم الاستضافة (${response.status})${extra}: لم يتم إرجاع استجابة JSON من الخادم.`);
   }
 }

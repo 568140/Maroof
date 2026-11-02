@@ -1,6 +1,5 @@
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
 import { DbService } from './src/dbService';
 import { User, Contact, Ad, Transaction, SystemSettings } from './src/types';
 
@@ -11,18 +10,56 @@ export async function createExpressApp() {
 
   const app = express();
 
-  // Initialize Firestore database connections and push initial seed data
-  await DbService.init();
+  // Initialize Firestore database connections and push initial seed data in background
+  DbService.init().catch(err => {
+    console.error('[createExpressApp] Error in DbService.init:', err);
+  });
+
+  // CORS Middleware for web and serverless hosting environments
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-admin-token');
+    if (req.method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+    next();
+  });
 
   // Express JSON Body Parser (increased limit for contacts sync payload)
   app.use(express.json({ limit: '15mb' }));
 
-  // Request logger middleware (optional but helpful)
+  // Normalize incoming URLs to handle Vercel rewrites and path variations
   app.use((req, res, next) => {
+    // Fix duplicate /api/api/ prefix if present
+    if (req.url.startsWith('/api/api/')) {
+      req.url = req.url.replace('/api/api/', '/api/');
+    } else if (
+      !req.url.startsWith('/api') &&
+      !req.url.startsWith('/@') &&
+      !req.url.startsWith('/src') &&
+      !req.url.startsWith('/assets') &&
+      !req.url.startsWith('/favicon') &&
+      !req.url.includes('.')
+    ) {
+      // If Vercel stripped /api prefix (e.g. /auth/register -> /api/auth/register)
+      req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
+    }
+
     if (req.path.startsWith('/api')) {
       console.log(`[API ${new Date().toISOString()}] ${req.method} ${req.path}`);
     }
     next();
+  });
+
+  // Health and Diagnostic endpoints
+  app.get(['/api', '/api/health', '/health'], (req, res) => {
+    res.json({
+      status: 'ok',
+      service: 'Maarouf API Server',
+      message: 'الخادم يعمل بنجاح ومستعد لاستقبال الطلبات',
+      timestamp: new Date().toISOString()
+    });
   });
 
   // --- API ROUTES ---
@@ -781,6 +818,14 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
     }
   });
 
+  // Fallback 404 handler for unknown API routes to always return JSON (never HTML)
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({
+      error: `المسار البرمجي غير موجود: ${req.method} ${req.originalUrl || req.url}`,
+      hint: 'تحقق من صحة المسار أو إعدادات التوجيه'
+    });
+  });
+
   expressAppInstance = app;
   return app;
 }
@@ -791,7 +836,8 @@ async function startServer() {
 
   // --- VITE MIDDLEWARE CONFIGURATION ---
   if (process.env.NODE_ENV !== 'production') {
-    // In development mode, load Vite Dev Server
+    // In development mode, dynamically load Vite Dev Server
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -811,4 +857,18 @@ async function startServer() {
   });
 }
 
-startServer();
+// Only launch standalone HTTP server when executed directly (dev / standalone node),
+// NOT inside serverless environments (Vercel, AWS Lambda, Netlify).
+const isServerless = Boolean(
+  process.env.VERCEL || 
+  process.env.AWS_LAMBDA_FUNCTION_NAME || 
+  process.env.LAMBDA_TASK_ROOT ||
+  process.env.NETLIFY
+);
+
+if (!isServerless) {
+  startServer().catch(err => {
+    console.error('[Maarouf Server] Failed to start:', err);
+  });
+}
+

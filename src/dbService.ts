@@ -120,36 +120,49 @@ const SEED_ADS: Ad[] = [
 ];
 
 export class DbService {
+  private static isInitialized = false;
+  private static initPromise: Promise<void> | null = null;
+
   /**
    * Initialize Firestore database with seed data if empty.
    */
   public static async init(): Promise<void> {
-    console.log('[DbService] Initializing Firestore connection...');
-    try {
-      // 1. Check & Seed Settings
-      const settingsDocRef = doc(db, 'settings', 'system_settings');
-      const settingsDoc = await getDoc(settingsDocRef);
-      if (!settingsDoc.exists()) {
-        console.log('[DbService] Seeding default settings...');
-        await setDoc(settingsDocRef, DEFAULT_SETTINGS);
-      }
+    if (this.isInitialized) return;
+    if (this.initPromise) return this.initPromise;
 
-      // 2. Check & Seed Ads
-      const adsSnap = await getDocs(query(collection(db, 'ads'), limit(1)));
-      if (adsSnap.empty) {
-        console.log('[DbService] Seeding default ads...');
-        const batch = writeBatch(db);
-        for (const ad of SEED_ADS) {
-          const ref = doc(db, 'ads', ad.id);
-          batch.set(ref, ad);
+    this.initPromise = (async () => {
+      console.log('[DbService] Initializing Firestore connection...');
+      try {
+        // 1. Check & Seed Settings
+        const settingsDocRef = doc(db, 'settings', 'system_settings');
+        const settingsDoc = await getDoc(settingsDocRef);
+        if (!settingsDoc.exists()) {
+          console.log('[DbService] Seeding default settings...');
+          await setDoc(settingsDocRef, DEFAULT_SETTINGS);
         }
-        await batch.commit();
-      }
 
-      console.log('[DbService] Firestore initialization completed successfully!');
-    } catch (err) {
-      console.error('[DbService] Error initializing Firestore database:', err);
-    }
+        // 2. Check & Seed Ads
+        const adsSnap = await getDocs(query(collection(db, 'ads'), limit(1)));
+        if (adsSnap.empty) {
+          console.log('[DbService] Seeding default ads...');
+          const batch = writeBatch(db);
+          for (const ad of SEED_ADS) {
+            const ref = doc(db, 'ads', ad.id);
+            batch.set(ref, ad);
+          }
+          await batch.commit();
+        }
+
+        this.isInitialized = true;
+        console.log('[DbService] Firestore initialization completed successfully!');
+      } catch (err) {
+        console.error('[DbService] Error initializing Firestore database:', err);
+      } finally {
+        this.initPromise = null;
+      }
+    })();
+
+    return this.initPromise;
   }
 
   // --- Users Service ---
