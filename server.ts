@@ -5,7 +5,7 @@ import { User, Contact, Ad, Transaction, SystemSettings } from './src/types';
 
 let expressAppInstance: express.Express | null = null;
 
-export async function createExpressApp() {
+export function createExpressApp(): express.Express {
   if (expressAppInstance) return expressAppInstance;
 
   const app = express();
@@ -36,6 +36,12 @@ export async function createExpressApp() {
 
   // Normalize incoming URLs to handle Vercel rewrites and path variations
   app.use((req, res, next) => {
+    // If Vercel rewrote the URL to /api, recover the original path from headers
+    const matchedPath = (req.headers['x-matched-path'] as string) || '';
+    if (matchedPath && matchedPath.startsWith('/api') && (req.url === '/api' || req.url === '/api/' || req.url === '')) {
+      req.url = matchedPath;
+    }
+
     // Fix duplicate /api/api/ prefix if present
     if (req.url.startsWith('/api/api/')) {
       req.url = req.url.replace('/api/api/', '/api/');
@@ -828,13 +834,24 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
     });
   });
 
+  // Global error handler to catch all errors and return structured JSON
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('[Express Global Error]:', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'خطأ في معالجة طلب الخادم: ' + (err?.message || 'Unknown error'),
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
   expressAppInstance = app;
   return app;
 }
 
 async function startServer() {
   const PORT = 3000;
-  const app = await createExpressApp();
+  const app = createExpressApp();
 
   // --- VITE MIDDLEWARE CONFIGURATION ---
   if (process.env.NODE_ENV !== 'production') {
