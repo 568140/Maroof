@@ -27,24 +27,26 @@ export default function Header({
   return (
     <>
       {/* Top Navbar */}
-      <header className="sticky top-0 z-40 bg-[#070b19]/90 backdrop-blur-md border-b border-[#c5a059]/10 px-4 py-3 flex items-center justify-between">
+      <header className="sticky top-0 z-40 bg-[#040f33]/90 backdrop-blur-md border-b border-[#0d52ff]/20 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setDrawerOpen(true)}
-            className="p-2 text-gray-400 hover:text-[#e5c158] transition-colors rounded-lg hover:bg-white/5"
+            className="p-2 text-slate-300 hover:text-[#ffb300] transition-colors rounded-xl hover:bg-white/5"
             id="menu-toggle"
           >
             <Menu className="w-6 h-6" />
           </button>
           
-          {/* Logo with luxurious typography */}
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('search')}>
-            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#0d1430] to-[#1e295d] border border-[#c5a059]/30 flex items-center justify-center shadow-[0_0_15px_rgba(212,175,55,0.15)]">
-              <span className="text-[#e5c158] font-bold text-lg">م</span>
-            </div>
+          {/* Logo with official attached visual identity */}
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setActiveTab('search')}>
+            <img 
+              src="/logo.png" 
+              alt="شعار معروف" 
+              className="w-10 h-10 rounded-xl object-cover shadow-[0_0_15px_rgba(13,82,255,0.4)] border border-[#ffcc00]/40"
+            />
             <div className="flex flex-col">
               <span className="text-white font-extrabold text-lg tracking-wider font-display">معروف</span>
-              <span className="text-[10px] text-[#c5a059] font-medium tracking-widest uppercase">MAAROUF</span>
+              <span className="text-[10px] text-[#ffcc00] font-bold tracking-widest uppercase">MAAROUF</span>
             </div>
           </div>
         </div>
@@ -56,30 +58,30 @@ export default function Header({
               {/* Point badge */}
               <div 
                 onClick={() => setActiveTab('rewards')}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-[#1a1c1e] to-[#25282a] border border-[#c5a059]/30 text-xs text-[#e5c158] font-bold cursor-pointer hover:border-[#e5c158] transition-all"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0a2368] border border-[#ffcc00]/40 text-xs text-[#ffcc00] font-bold cursor-pointer hover:border-[#ffcc00] shadow-[0_0_10px_rgba(255,204,0,0.2)] transition-all"
               >
                 <Coins className="w-3.5 h-3.5" />
                 <span>{currentUser.points} نقطة</span>
               </div>
 
               {/* Free search balance badge */}
-              <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#c5a059]/10 border border-[#c5a059]/20 text-[11px] text-white">
-                <span className="text-[#e5c158] font-bold">{currentUser.searchBalance}</span>
-                <span className="text-gray-400">/ 3 عمليات مجانية</span>
+              <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#071948] border border-[#0d52ff]/30 text-[11px] text-white">
+                <span className="text-[#ffcc00] font-bold">{currentUser.searchBalance}</span>
+                <span className="text-slate-300">/ 3 عمليات مجانية</span>
               </div>
 
               {/* User Avatar Action */}
               <button
                 onClick={() => setActiveTab('profile')}
-                className={`w-9 h-9 rounded-full bg-[#1e295d]/60 border ${activeTab === 'profile' ? 'border-[#e5c158] shadow-[0_0_10px_rgba(212,175,55,0.3)]' : 'border-gray-700'} flex items-center justify-center text-white hover:border-[#e5c158] transition-all`}
+                className={`w-9 h-9 rounded-full bg-[#0d2a7a] border ${activeTab === 'profile' ? 'border-[#ffcc00] shadow-[0_0_10px_rgba(255,204,0,0.4)]' : 'border-[#0d52ff]/40'} flex items-center justify-center text-white hover:border-[#ffcc00] transition-all`}
               >
-                <User className="w-4 h-4 text-[#e5c158]" />
+                <User className="w-4 h-4 text-[#ffcc00]" />
               </button>
             </div>
           ) : (
             <button
               onClick={onOpenAuth}
-              className="px-4 py-2 text-xs font-semibold text-black bg-gradient-to-r from-[#e5c158] to-[#c5a059] rounded-lg shadow-md hover:from-[#f3e5ab] hover:to-[#e5c158] transition-all transform active:scale-95 flex items-center gap-1"
+              className="px-4 py-2 text-xs font-bold text-slate-950 bg-gradient-to-r from-[#ffcc00] to-[#f59e0b] rounded-xl shadow-[0_0_15px_rgba(255,204,0,0.3)] hover:brightness-110 transition-all transform active:scale-95 flex items-center gap-1"
             >
               <User className="w-3.5 h-3.5" />
               <span>تسجيل الدخول</span>
@@ -89,7 +91,7 @@ export default function Header({
           {isAdmin && (
             <button
               onClick={() => setActiveTab('admin')}
-              className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${activeTab === 'admin' ? 'bg-[#c5a059]/20 text-[#e5c158] border-[#e5c158]' : 'bg-[#121c3e] text-[#c5a059] border-[#c5a059]/30'} hover:bg-[#c5a059]/10`}
+              className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${activeTab === 'admin' ? 'bg-[#ffcc00]/20 text-[#ffcc00] border-[#ffcc00]' : 'bg-[#0a256e] text-[#ffcc00] border-[#0d52ff]/40'} hover:bg-[#ffcc00]/10`}
             >
               <ShieldCheck className="w-4 h-4" />
               <span>لوحة التحكم</span>
@@ -101,7 +103,7 @@ export default function Header({
       {/* Side Drawer Overlay */}
       {drawerOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm transition-opacity"
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm transition-opacity"
           onClick={() => setDrawerOpen(false)}
         />
       )}
@@ -111,15 +113,17 @@ export default function Header({
         initial={{ x: '100%' }}
         animate={{ x: drawerOpen ? 0 : '100%' }}
         transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-        className="fixed top-0 right-0 h-full w-80 max-w-[85vw] bg-[#070b19] border-l border-[#c5a059]/10 shadow-[0_0_40px_rgba(0,0,0,0.8)] z-50 flex flex-col text-right justify-between"
+        className="fixed top-0 right-0 h-full w-80 max-w-[85vw] bg-[#030d2a] border-l border-[#0d52ff]/20 shadow-[0_0_40px_rgba(0,0,0,0.9)] z-50 flex flex-col text-right justify-between"
       >
         <div className="p-6">
           {/* Header Inside Drawer */}
           <div className="flex items-center justify-between pb-6 border-b border-white/5">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#0d1430] to-[#1e295d] border border-[#c5a059]/30 flex items-center justify-center">
-                <span className="text-[#e5c158] font-bold text-sm">م</span>
-              </div>
+            <div className="flex items-center gap-2.5">
+              <img 
+                src="/logo.png" 
+                alt="شعار معروف" 
+                className="w-8 h-8 rounded-lg object-cover border border-[#ffcc00]/40 shadow-sm"
+              />
               <div>
                 <span className="text-white font-extrabold text-sm tracking-wider">منصة معروف</span>
               </div>

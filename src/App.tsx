@@ -292,11 +292,12 @@ export default function App() {
   }, [currentUser, systemSettings]);
 
   return (
-    <div className="min-h-screen bg-[#030612] text-gray-200 font-sans selection:bg-[#c5a059]/30 selection:text-white relative">
-      {/* Visual background luxury radial glows */}
+    <div className="min-h-screen bg-gradient-to-b from-[#020b24] via-[#051c52] to-[#01081a] text-slate-100 font-sans selection:bg-[#ffb300]/30 selection:text-white relative">
+      {/* Visual background electric blue & golden wave glows derived from the logo */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute -top-40 right-1/4 w-[500px] h-[500px] bg-[#c5a059]/5 rounded-full blur-[120px]" />
-        <div className="absolute top-1/2 left-10 w-[400px] h-[400px] bg-[#1e295d]/10 rounded-full blur-[100px]" />
+        <div className="absolute -top-32 right-1/4 w-[550px] h-[550px] bg-[#0d52ff]/15 rounded-full blur-[140px]" />
+        <div className="absolute top-1/4 -left-20 w-[450px] h-[450px] bg-[#ffb300]/10 rounded-full blur-[120px]" />
+        <div className="absolute bottom-10 right-10 w-[500px] h-[500px] bg-[#0a3ec9]/20 rounded-full blur-[150px]" />
       </div>
 
       {/* Header element */}

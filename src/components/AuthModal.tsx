@@ -113,31 +113,35 @@ export default function AuthModal({
             initial={{ scale: 0.95, opacity: 0, y: 15 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 15 }}
-            className="relative w-full max-w-md overflow-hidden rounded-2xl border border-[#c5a059]/30 bg-[#070b19] p-6 text-right shadow-[0_15px_40px_rgba(0,0,0,0.8)] z-10"
+            className="relative w-full max-w-md overflow-hidden rounded-3xl border-2 border-[#0d52ff]/40 bg-gradient-to-b from-[#071948] to-[#030d2a] p-6 text-right shadow-[0_20px_50px_rgba(2,11,39,0.9)] z-10"
           >
             {/* Close button */}
             <button
               onClick={onClose}
-              className="absolute left-4 top-4 text-gray-400 hover:text-white transition-colors"
+              className="absolute left-4 top-4 text-slate-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5"
             >
               <X className="w-5 h-5" />
             </button>
 
-            {/* Header branding */}
-            <div className="text-center space-y-2 pb-5 border-b border-white/5">
-              <div className="w-12 h-12 rounded-full bg-[#1e295d] border border-[#c5a059]/30 flex items-center justify-center mx-auto text-[#e5c158] shadow-[0_0_15px_rgba(212,175,55,0.1)]">
-                <Smartphone className="w-6 h-6" />
+            {/* Header branding with Logo */}
+            <div className="text-center space-y-2.5 pb-5 border-b border-white/10 flex flex-col items-center">
+              <img 
+                src="/logo.png" 
+                alt="شعار معروف" 
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-[#ffcc00]/50 shadow-[0_0_20px_rgba(13,82,255,0.4)]"
+              />
+              <div>
+                <h3 className="text-white text-lg font-black">توثيق الدخول في تطبيق معروف</h3>
+                <p className="text-slate-300 text-xs max-w-xs mx-auto mt-1">
+                  سجّل رقم هاتفك اليمني للتمتع بعمليات البحث المجانية ومزامنة دليلك بأمان
+                </p>
               </div>
-              <h3 className="text-white text-lg font-black">ربط وتوثيق الجهاز التلقائي</h3>
-              <p className="text-gray-400 text-xs max-w-xs mx-auto">
-                منصة معروف تحظر إنشاء أكثر من حساب لكل هاتف يمني لمنع تلاعب منتحلي الشخصيات.
-              </p>
             </div>
 
             {/* Form */}
             <form onSubmit={handleRegister} className="mt-5 space-y-4">
               <div className="space-y-1.5">
-                <label className="text-[10px] text-[#c5a059] font-bold tracking-wider uppercase block">رقم الهاتف اليمني</label>
+                <label className="text-[11px] text-[#ffcc00] font-bold tracking-wider uppercase block">رقم الهاتف اليمني</label>
                 <div className="relative">
                   <input
                     type="tel"
@@ -145,34 +149,33 @@ export default function AuthModal({
                     value={phone}
                     onChange={(e) => setPhone(e.target.value.replace(/[^\d]/g, '').substring(0, 9))}
                     placeholder="771234567"
-                    className="w-full text-left font-mono font-bold text-base tracking-widest pl-3 pr-10 py-3 rounded-xl bg-black/40 border border-[#c5a059]/15 text-white focus:border-[#e5c158] transition-all outline-none"
+                    className="w-full text-left font-mono font-bold text-lg tracking-widest pl-3 pr-11 py-3 rounded-2xl bg-[#020b24]/90 border-2 border-[#0d52ff]/30 text-white focus:border-[#ffcc00] focus:ring-2 focus:ring-[#ffcc00]/30 transition-all outline-none"
                     dir="ltr"
                   />
-                  <span className="text-gray-400 font-mono text-xs absolute left-3 top-1/2 -translate-y-1/2 font-bold pointer-events-none" />
-                  <div className="absolute top-1/2 -translate-y-1/2 right-3 text-gray-500">
-                    <Smartphone className="w-4 h-4" />
+                  <div className="absolute top-1/2 -translate-y-1/2 right-3.5 text-[#ffcc00]">
+                    <Smartphone className="w-4.5 h-4.5" />
                   </div>
                 </div>
               </div>
 
-              <div className="p-3 bg-yellow-500/5 rounded-lg border border-yellow-500/10 text-[10px] text-yellow-300 leading-relaxed text-right flex gap-1.5 items-start">
+              <div className="p-3 bg-[#ffcc00]/10 rounded-xl border border-[#ffcc00]/20 text-[11px] text-[#ffcc00] leading-relaxed text-right flex gap-2 items-start">
                 <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>
-                  تنبيه: سيتم ربط هذا الرقم بجهازك الحالي بشكل دائم. لا يمكن تغيير الجهاز أو الدخول برقم آخر في وقت واحد لضمان دقة معلومات الدليل اليمني.
+                  تنبيه: سيتم ربط هذا الرقم بجهازك الحالي لضمان دقة معلومات الدليل ومكافحة الانتحال.
                 </span>
               </div>
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 bg-gradient-to-r from-[#e5c158] to-[#c5a059] text-black font-extrabold text-xs rounded-xl shadow-md transition-all hover:brightness-110 flex items-center justify-center gap-1.5"
+                className="w-full py-3 bg-gradient-to-r from-[#ffcc00] via-[#ffb300] to-[#f59e0b] text-slate-950 font-black text-xs md:text-sm rounded-xl shadow-[0_0_20px_rgba(255,204,0,0.3)] transition-all hover:brightness-110 flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 {loading ? (
                   <RefreshCw className="w-4.5 h-4.5 animate-spin" />
                 ) : (
                   <>
-                    <ShieldCheck className="w-4.5 h-4.5" />
-                    <span>موافق، تسجيل وتوثيق الجهاز</span>
+                    <ShieldCheck className="w-4.5 h-4.5 text-slate-950" />
+                    <span>تسجيل ومصادقة الدخول</span>
                   </>
                 )}
               </button>

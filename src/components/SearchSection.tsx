@@ -307,55 +307,73 @@ export default function SearchSection({
 
   return (
     <div className="max-w-xl mx-auto space-y-6">
-      {/* Visual Identity Title Section */}
-      <div className="text-center space-y-2 py-4">
-        <h1 className="text-white text-2xl md:text-3xl font-black leading-snug">
-          اعرف هوية أي رقم يمني <br className="sm:hidden" /> خلال ثوانٍ
-        </h1>
-        <p className="text-gray-400 text-xs md:text-sm font-medium">
-          قاعدة البيانات الكبرى والأكثر حماية وموثوقية في اليمن
-        </p>
+      {/* Visual Identity Title Section with Logo Showcase */}
+      <div className="text-center space-y-3 py-2 flex flex-col items-center">
+        <div className="relative group cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+          <div className="absolute inset-0 bg-gradient-to-r from-[#0d52ff] to-[#ffcc00] rounded-3xl blur-lg opacity-40 group-hover:opacity-75 transition-opacity" />
+          <img 
+            src="/logo.png" 
+            alt="معروف - كاشف الأرقام" 
+            className="relative w-20 h-20 md:w-24 md:h-24 rounded-2xl object-cover shadow-[0_10px_25px_rgba(0,0,0,0.6)] border-2 border-[#ffcc00]/60 transform group-hover:scale-105 transition-transform"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <h1 className="text-white text-2xl md:text-3xl font-black leading-snug">
+            اعرف هوية أي رقم يمني <br className="sm:hidden" /> خلال ثوانٍ
+          </h1>
+          <p className="text-slate-300 text-xs md:text-sm font-medium">
+            الدليل اليمني الذكي والأكثر حماية ودقة للبحث عن الأرقام وتحديد الهويات
+          </p>
+        </div>
       </div>
 
-      {/* Main Search Glassmorphism Card */}
-      <div className="bg-gradient-to-br from-[#0c122b]/80 to-[#070b1a]/95 border border-[#c5a059]/20 rounded-2xl p-5 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.5)] backdrop-blur-md">
-        <form onSubmit={(e) => handleSearchSubmit(e, 'standard')} className="space-y-4">
+      {/* Main Search Glassmorphism Card (Inspired by Logo's sleek phone bezel) */}
+      <div className="bg-gradient-to-br from-[#071948]/90 via-[#0a2368]/95 to-[#041030]/95 border-2 border-[#0d52ff]/40 rounded-3xl p-5 md:p-6 shadow-[0_15px_40px_rgba(2,11,39,0.7)] backdrop-blur-md relative overflow-hidden">
+        {/* Subtle decorative curved golden light trace matching the logo */}
+        <div className="absolute -top-16 -right-16 w-36 h-36 bg-[#ffcc00]/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="absolute -bottom-16 -left-16 w-36 h-36 bg-[#0d52ff]/20 rounded-full blur-2xl pointer-events-none" />
+
+        <form onSubmit={(e) => handleSearchSubmit(e, 'standard')} className="space-y-4 relative z-10">
           <div className="space-y-1.5 text-right">
-            <label className="text-[11px] text-[#c5a059] font-bold tracking-wider uppercase">أدخل الرقم اليمني</label>
+            <label className="text-[11px] text-[#ffcc00] font-bold tracking-wider uppercase flex items-center justify-between">
+              <span>أدخل الرقم اليمني (9 أرقام)</span>
+              <span className="text-[10px] text-slate-400 font-mono font-normal">مثال: 771234567</span>
+            </label>
             <div className="relative">
               <input
                 type="tel"
                 value={phoneQuery}
                 onChange={(e) => setPhoneQuery(e.target.value.replace(/[^\d]/g, '').substring(0, 9))}
                 placeholder="771234567"
-                className="w-full text-left font-mono font-bold text-lg tracking-widest pl-4 pr-11 py-3.5 rounded-xl bg-black/40 border border-[#c5a059]/15 text-white focus:border-[#e5c158] focus:ring-1 focus:ring-[#e5c158] transition-all outline-none"
+                className="w-full text-left font-mono font-black text-xl tracking-widest pl-4 pr-12 py-3.5 rounded-2xl bg-[#020b24]/80 border-2 border-[#0d52ff]/30 text-white focus:border-[#ffcc00] focus:ring-2 focus:ring-[#ffcc00]/30 transition-all outline-none shadow-inner"
                 dir="ltr"
               />
-              <div className="absolute top-1/2 -translate-y-1/2 right-3.5 text-[#c5a059]/60">
+              <div className="absolute top-1/2 -translate-y-1/2 right-3.5 text-[#ffcc00]">
                 <Search className="w-5 h-5" />
               </div>
             </div>
           </div>
 
           {errorState && (
-            <div className="p-3 text-xs text-red-300 bg-red-950/20 border border-red-900/30 rounded-lg text-right flex items-start gap-2">
+            <div className="p-3 text-xs text-red-200 bg-red-950/40 border border-red-500/40 rounded-xl text-right flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
               <span>{errorState}</span>
             </div>
           )}
 
-          {/* Glowing Search Button */}
+          {/* Glowing Search Button (Pure Sun Gold from Logo) */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3.5 bg-gradient-to-r from-[#e5c158] to-[#c5a059] hover:from-[#f3e5ab] hover:to-[#e5c158] text-black font-extrabold text-sm rounded-xl shadow-[0_0_20px_rgba(212,175,55,0.25)] hover:shadow-[0_0_30px_rgba(212,175,55,0.4)] transition-all flex items-center justify-center gap-2"
+            className="w-full py-3.5 bg-gradient-to-r from-[#ffcc00] via-[#ffb300] to-[#f59e0b] hover:brightness-110 active:scale-[0.99] text-slate-950 font-black text-sm md:text-base rounded-2xl shadow-[0_0_25px_rgba(255,204,0,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             {loading ? (
-              <RefreshCw className="w-5 h-5 animate-spin" />
+              <RefreshCw className="w-5 h-5 animate-spin text-slate-950" />
             ) : (
               <>
-                <Search className="w-5 h-5" />
-                <span>بحث</span>
+                <Search className="w-5 h-5 text-slate-950 stroke-[2.5]" />
+                <span>بحث فوري عن الهوية</span>
               </>
             )}
           </button>
@@ -399,31 +417,34 @@ export default function SearchSection({
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -15 }}
-            className="bg-gradient-to-br from-[#0c122b]/90 to-[#070b1a]/95 border border-[#c5a059]/20 rounded-2xl p-5 shadow-[0_15px_35px_rgba(0,0,0,0.6)] backdrop-blur-md text-right"
+            className="bg-gradient-to-br from-[#071a4d]/95 via-[#0b2875]/95 to-[#041238]/95 border-2 border-[#0d52ff]/40 rounded-3xl p-5 shadow-[0_20px_45px_rgba(2,11,39,0.8)] backdrop-blur-md text-right"
           >
-            <div className="flex items-center justify-between pb-4 border-b border-white/5 mb-4">
+            <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
               <button 
                 onClick={handleCopyNum}
-                className="flex items-center gap-1 text-xs text-[#c5a059] hover:text-white transition-colors"
+                className="flex items-center gap-1.5 text-xs text-[#ffcc00] hover:text-white px-2.5 py-1 rounded-lg bg-black/40 border border-[#ffcc00]/30 transition-colors"
               >
                 {copiedNum ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
                 <span className="font-mono font-bold">{searchedNum}</span>
               </button>
-              <h3 className="text-white text-sm font-bold">نتائج البحث عن الرقم</h3>
+              <h3 className="text-white text-sm font-bold flex items-center gap-1.5">
+                <Search className="w-4 h-4 text-[#ffcc00]" />
+                <span>نتائج البحث عن الرقم</span>
+              </h3>
             </div>
 
             {results.length > 0 ? (
               <div className="space-y-3">
-                <p className="text-gray-400 text-[10px] pb-1">الأسماء الأكثر شيوعاً المرتبطة بالرقم:</p>
+                <p className="text-slate-300 text-xs pb-1">الأسماء الأكثر شيوعاً المرتبطة بالرقم:</p>
                 <div className="space-y-2">
                   {results.map((item, index) => (
                     <div
                       key={item.id || index}
-                      className="group flex items-center justify-between p-3.5 rounded-xl bg-white/5 border border-white/5 hover:border-[#c5a059]/30 hover:bg-[#c5a059]/5 transition-all"
+                      className="group flex items-center justify-between p-3.5 rounded-2xl bg-[#020b24]/60 border border-[#0d52ff]/30 hover:border-[#ffcc00]/60 hover:bg-[#0d52ff]/10 transition-all shadow-sm"
                     >
                       {/* Copy Action & Percentage */}
                       <div className="flex items-center gap-3">
-                        <span className="text-[#e5c158] font-bold text-xs">{calculatePercentage(item.frequency)}%</span>
+                        <span className="text-[#ffcc00] font-black text-xs font-mono">{calculatePercentage(item.frequency)}%</span>
                         <button
                           onClick={() => handleCopyText(item.contactName, index)}
                           className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/5 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
@@ -592,41 +613,41 @@ export default function SearchSection({
       {/* Platform Real-Time Metrics (Base + Real Firestore Data Dynamic Counter) */}
       <div className="grid grid-cols-3 gap-3 pt-4">
         {/* Card 1: Users (1,248,563 + Real Users) */}
-        <div className={`bg-[#0c122b]/60 border ${pulseCard === 'users' ? 'border-[#e5c158] shadow-[0_0_15px_rgba(229,193,88,0.25)]' : 'border-[#c5a059]/10'} rounded-xl p-3 text-center space-y-1 transition-all duration-300 relative overflow-hidden group`}>
-          <div className="flex justify-center text-[#e5c158]">
-            <Users className="w-4.5 h-4.5" />
+        <div className={`bg-[#06184a]/80 border ${pulseCard === 'users' ? 'border-[#ffcc00] shadow-[0_0_20px_rgba(255,204,0,0.3)]' : 'border-[#0d52ff]/30'} rounded-2xl p-3.5 text-center space-y-1.5 transition-all duration-300 relative overflow-hidden group shadow-md`}>
+          <div className="flex justify-center text-[#ffcc00]">
+            <Users className="w-5 h-5" />
           </div>
           <div className="text-white font-extrabold text-sm md:text-base font-mono tracking-tight">
             {animatedUsers.toLocaleString('en-US')}
           </div>
-          <div className="text-gray-400 text-[9px] font-medium leading-none">
-            مستخدم مسجل {platformMetrics.real.users > 0 && <span className="text-[#e5c158] font-mono font-bold">(+{platformMetrics.real.users})</span>}
+          <div className="text-slate-300 text-[10px] font-medium leading-none">
+            مستخدم مسجل {platformMetrics.real.users > 0 && <span className="text-[#ffcc00] font-mono font-bold">(+{platformMetrics.real.users})</span>}
           </div>
         </div>
 
         {/* Card 2: Searches (12,458,963 + Real Searches) */}
-        <div className={`bg-[#0c122b]/60 border ${pulseCard === 'searches' ? 'border-[#e5c158] shadow-[0_0_15px_rgba(229,193,88,0.25)]' : 'border-[#c5a059]/10'} rounded-xl p-3 text-center space-y-1 transition-all duration-300 relative overflow-hidden group`}>
-          <div className="flex justify-center text-[#e5c158]">
-            <Search className="w-4.5 h-4.5" />
+        <div className={`bg-[#06184a]/80 border ${pulseCard === 'searches' ? 'border-[#ffcc00] shadow-[0_0_20px_rgba(255,204,0,0.3)]' : 'border-[#0d52ff]/30'} rounded-2xl p-3.5 text-center space-y-1.5 transition-all duration-300 relative overflow-hidden group shadow-md`}>
+          <div className="flex justify-center text-[#ffcc00]">
+            <Search className="w-5 h-5 stroke-[2.5]" />
           </div>
           <div className="text-white font-extrabold text-sm md:text-base font-mono tracking-tight">
             {animatedSearches.toLocaleString('en-US')}
           </div>
-          <div className="text-gray-400 text-[9px] font-medium leading-none">
-            عملية بحث ناجحة {platformMetrics.real.searches > 0 && <span className="text-[#e5c158] font-mono font-bold">(+{platformMetrics.real.searches})</span>}
+          <div className="text-slate-300 text-[10px] font-medium leading-none">
+            عملية بحث ناجحة {platformMetrics.real.searches > 0 && <span className="text-[#ffcc00] font-mono font-bold">(+{platformMetrics.real.searches})</span>}
           </div>
         </div>
 
         {/* Card 3: Database Identities (45,231,789 + Real Contacts) */}
-        <div className={`bg-[#0c122b]/60 border ${pulseCard === 'contacts' ? 'border-[#e5c158] shadow-[0_0_15px_rgba(229,193,88,0.25)]' : 'border-[#c5a059]/10'} rounded-xl p-3 text-center space-y-1 transition-all duration-300 relative overflow-hidden group`}>
-          <div className="flex justify-center text-[#e5c158]">
-            <Database className="w-4.5 h-4.5" />
+        <div className={`bg-[#06184a]/80 border ${pulseCard === 'contacts' ? 'border-[#ffcc00] shadow-[0_0_20px_rgba(255,204,0,0.3)]' : 'border-[#0d52ff]/30'} rounded-2xl p-3.5 text-center space-y-1.5 transition-all duration-300 relative overflow-hidden group shadow-md`}>
+          <div className="flex justify-center text-[#ffcc00]">
+            <Database className="w-5 h-5" />
           </div>
           <div className="text-white font-extrabold text-sm md:text-base font-mono tracking-tight">
             {animatedContacts.toLocaleString('en-US')}
           </div>
-          <div className="text-gray-400 text-[9px] font-medium leading-none">
-            رقم وهوية يمنية {platformMetrics.real.contacts > 0 && <span className="text-[#e5c158] font-mono font-bold">(+{platformMetrics.real.contacts})</span>}
+          <div className="text-slate-300 text-[10px] font-medium leading-none">
+            هوية ورقم نشط {platformMetrics.real.contacts > 0 && <span className="text-[#ffcc00] font-mono font-bold">(+{platformMetrics.real.contacts})</span>}
           </div>
         </div>
       </div>
