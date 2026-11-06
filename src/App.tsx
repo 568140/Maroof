@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, Smartphone, Award, HelpCircle, ShieldCheck, Cpu, LogOut, CheckCircle, 
-  AlertCircle, Sparkles, Coins, KeyRound, Globe, ArrowRight, Settings, Info 
+  AlertCircle, Sparkles, Coins, KeyRound, Globe, ArrowRight, Settings, Info,
+  Wallet, Gift, Copy, Check
 } from 'lucide-react';
 import Header from './components/Header';
 import SearchSection from './components/SearchSection';
@@ -13,6 +14,7 @@ import AuthModal from './components/AuthModal';
 import AdBanner from './components/AdBanner';
 import { User, Ad, Transaction, SystemSettings } from './types';
 import { safeFetchJson } from './utils/apiHelper';
+import { WALLET_3D_GRAPHIC, GOLD_COINS_STACK } from './assets/walletAssetBase64';
 
 interface Toast {
   id: string;
@@ -397,31 +399,113 @@ export default function App() {
 
             {/* PROFILE VIEW (Follows layout mockup 3) */}
             {activeTab === 'profile' && currentUser && (
-              <div className="max-w-xl mx-auto space-y-6 text-right">
-                <div className="bg-gradient-to-br from-[#0c122b]/80 to-[#070b1a] border border-[#c5a059]/20 rounded-2xl p-6 shadow-md relative overflow-hidden">
-                  <div className="absolute top-0 left-0 p-4">
-                    <span className="px-2 py-1 rounded bg-[#c5a059]/10 border border-[#c5a059]/20 text-[10px] text-[#e5c158] font-bold">حساب موثق</span>
+              <div className="max-w-2xl md:max-w-3xl mx-auto space-y-6 text-right">
+                {/* PREMIUM DIGITAL WALLET CARD (Exact Replica of Reference Design) */}
+                <div className="w-full bg-gradient-to-b from-[#031345] via-[#051c5e] to-[#020b29] border-2 border-[#ffcc00] rounded-[2rem] p-5 sm:p-7 md:p-8 shadow-[0_0_35px_rgba(255,204,0,0.35)] relative overflow-hidden text-right">
+                  {/* Subtle gold and blue ambient light flares & map watermark */}
+                  <div className="absolute -top-16 -left-16 w-72 h-72 bg-[#0d52ff]/25 rounded-full blur-3xl pointer-events-none" />
+                  <div className="absolute -bottom-16 -right-16 w-72 h-72 bg-[#ffcc00]/20 rounded-full blur-3xl pointer-events-none" />
+                  
+                  {/* Subtle dots pattern / map watermark in background */}
+                  <div 
+                    className="absolute inset-0 opacity-[0.07] pointer-events-none"
+                    style={{
+                      backgroundImage: 'radial-gradient(#ffcc00 1.5px, transparent 1.5px)',
+                      backgroundSize: '24px 24px'
+                    }}
+                  />
+
+                  {/* Top Section: Visual Left has Info/Balance, Visual Right has 3D Wallet Graphic */}
+                  <div className="relative z-10 grid grid-cols-1 md:grid-cols-2 items-center gap-6 pb-6">
+                    
+                    {/* Visual Left (Column 1): Badge, 77 + Gold Coins, User Name, ID Pill */}
+                    <div className="flex flex-col items-center md:items-start text-center md:text-right space-y-3.5 order-2 md:order-1" dir="rtl">
+                      
+                      {/* Top Pill Badge: محفظتك في معروف */}
+                      <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-gradient-to-r from-[#ffd700] via-[#ffcc00] to-[#f59e0b] text-slate-950 font-black text-xs md:text-sm shadow-md border border-[#ffb300]">
+                        <Wallet className="w-4 h-4 stroke-[2.5]" />
+                        <span>محفظتك في معروف</span>
+                      </div>
+
+                      {/* Main Balance Row: Gold Coins Stack + Giant Golden 77 Number */}
+                      <div className="flex items-center gap-3.5 pt-1">
+                        <img
+                          src={GOLD_COINS_STACK}
+                          alt="عملات ذهبية"
+                          loading="eager"
+                          decoding="sync"
+                          className="w-14 h-12 md:w-16 md:h-14 object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)] shrink-0"
+                        />
+                        <span className="text-transparent bg-clip-text bg-gradient-to-b from-[#fffbeb] via-[#ffcc00] to-[#d97706] font-black text-5xl md:text-6xl font-mono tracking-tight drop-shadow-[0_2px_15px_rgba(255,204,0,0.45)]">
+                          {currentUser.phone ? currentUser.phone.substring(0, 2) : '77'}
+                        </span>
+                      </div>
+
+                      {/* User Display Title */}
+                      <div className="text-white font-extrabold text-lg md:text-xl tracking-wide">
+                        مستخدم معروف اليمني
+                      </div>
+
+                      {/* User Phone ID Pill with Click-to-Copy */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(currentUser.phone);
+                          showToast(`تم نسخ رقم الحساب: ${currentUser.phone}`, 'info');
+                        }}
+                        className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-[#020b24]/90 border-2 border-[#ffcc00]/60 hover:border-[#ffcc00] text-white text-xs md:text-sm font-mono font-bold transition-all shadow-inner group cursor-pointer"
+                        title="انقر لنسخ رقم الحساب"
+                      >
+                        <span className="text-[#ffcc00] text-sm">🪪</span>
+                        <span className="tracking-wider">{currentUser.phone}</span>
+                        <Copy className="w-3.5 h-3.5 text-[#ffcc00] group-hover:scale-110 transition-transform" />
+                      </button>
+                    </div>
+
+                    {/* Visual Right (Column 2): High-Fidelity 3D Leather Wallet Graphic with Orbit Glow */}
+                    <div className="relative flex items-center justify-center order-1 md:order-2 w-full">
+                      <div className="relative w-64 sm:w-72 md:w-80 max-w-full">
+                        <img
+                          src={WALLET_3D_GRAPHIC}
+                          alt="محفظة معروف الذكية ثلاثية الأبعاد"
+                          loading="eager"
+                          decoding="sync"
+                          className="w-full h-auto object-contain drop-shadow-[0_15px_35px_rgba(0,0,0,0.85)] filter brightness-105"
+                        />
+                      </div>
+                    </div>
+
                   </div>
 
-                  <div className="flex flex-col items-center text-center space-y-3">
-                    <div className="w-16 h-16 rounded-full bg-[#1e295d] border border-[#c5a059]/30 flex items-center justify-center text-[#e5c158] text-xl font-bold">
-                      {currentUser.phone.substring(0, 2)}
-                    </div>
-                    <div>
-                      <h3 className="text-white font-extrabold text-base">مستخدم معروف اليمني</h3>
-                      <p className="text-[#e5c158] font-mono text-sm mt-0.5" dir="ltr">{currentUser.phone}</p>
+                  {/* Bottom Row: Two Equal Styled Inner Cards (Search Balance on Left, Wallet Points on Right) */}
+                  <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3" dir="rtl">
+                    
+                    {/* Card 1: Search Balance (رصيد عمليات البحث) */}
+                    <div className="bg-[#020c2b]/95 border-2 border-[#ffcc00]/40 hover:border-[#ffcc00] rounded-2xl p-4 flex items-center justify-between shadow-lg transition-colors">
+                      <div className="w-12 h-12 rounded-full bg-[#0d52ff]/20 border border-[#0d52ff]/50 flex items-center justify-center text-[#ffcc00] shrink-0 shadow-inner">
+                        <Search className="w-6 h-6 stroke-[2.5]" />
+                      </div>
+                      <div className="flex flex-col text-left font-mono">
+                        <span className="text-slate-300 text-xs font-sans font-bold text-right">رصيد عمليات البحث</span>
+                        <span className="text-white font-black text-2xl font-mono text-center mt-0.5">
+                          {currentUser.searchBalance} / {systemSettings?.dailySearchBalance ? systemSettings.dailySearchBalance * 2 : 6}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 w-full pt-4 border-t border-white/5">
-                      <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
-                        <span className="text-gray-500 text-[10px] block font-bold">نقاط المحفظة</span>
-                        <span className="text-[#e5c158] font-bold text-sm font-mono mt-0.5">{currentUser.points}</span>
+                    {/* Card 2: Wallet Points (نقاط المحفظة) */}
+                    <div className="bg-[#020c2b]/95 border-2 border-[#ffcc00]/40 hover:border-[#ffcc00] rounded-2xl p-4 flex items-center justify-between shadow-lg transition-colors">
+                      <div className="w-12 h-12 rounded-full bg-[#ffcc00]/15 border border-[#ffcc00]/40 flex items-center justify-center text-[#ffcc00] shrink-0 shadow-inner">
+                        <Gift className="w-6 h-6 stroke-[2.2]" />
                       </div>
-                      <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
-                        <span className="text-gray-500 text-[10px] block font-bold">رصيد عمليات البحث</span>
-                        <span className="text-white font-bold text-sm font-mono mt-0.5">{currentUser.searchBalance} / 3</span>
+                      <div className="flex flex-col text-left font-mono">
+                        <span className="text-slate-300 text-xs font-sans font-bold text-right">نقاط المحفظة</span>
+                        <span className="text-[#ffcc00] font-black text-2xl font-mono text-center mt-0.5">
+                          {currentUser.points}
+                        </span>
                       </div>
                     </div>
+
                   </div>
                 </div>
 
