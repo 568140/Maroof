@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Info, Users, Database, ShieldAlert, Coins, Copy, Check, RefreshCw, Star, AlertTriangle, ArrowRight, Eye, Play, Clock, Sparkles, X, Activity } from 'lucide-react';
 import { User, Contact, Ad, PlatformMetrics } from '../types';
+import { APP_LOGO } from '../assets/logoBase64';
 
 interface SearchSectionProps {
   currentUser: User | null;
@@ -13,8 +14,8 @@ interface SearchSectionProps {
   adsList?: Ad[];
 }
 
-// Hook for smooth animated counter roll
-function useAnimatedCounter(targetValue: number, duration: number = 700) {
+// Hook for smooth animated counter roll (gentle, steady, and readable pacing)
+function useAnimatedCounter(targetValue: number, duration: number = 2400) {
   const [current, setCurrent] = useState(targetValue);
   const currentRef = useRef(current);
   currentRef.current = current;
@@ -30,8 +31,8 @@ function useAnimatedCounter(targetValue: number, duration: number = 700) {
     const update = (now: number) => {
       const elapsed = now - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      // Ease out cubic for realistic mechanical ticker feel
-      const ease = 1 - Math.pow(1 - progress, 3);
+      // Gentle ease-out curve for smooth and steady counting speed
+      const ease = 1 - Math.pow(1 - progress, 2);
       const nextVal = Math.round(startValue + diff * ease);
       setCurrent(nextVal);
 
@@ -97,8 +98,8 @@ export default function SearchSection({
 
   useEffect(() => {
     fetchLiveMetrics();
-    // Poll every 8 seconds for dynamic live updates as users join, search, and sync
-    const pollInterval = setInterval(fetchLiveMetrics, 8000);
+    // Poll every 15 seconds for calm and gentle dynamic updates
+    const pollInterval = setInterval(fetchLiveMetrics, 15000);
 
     const onMetricsUpdated = () => {
       fetchLiveMetrics();
@@ -312,9 +313,14 @@ export default function SearchSection({
         <div className="relative group cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
           <div className="absolute inset-0 bg-gradient-to-r from-[#0d52ff] to-[#ffcc00] rounded-3xl blur-lg opacity-40 group-hover:opacity-75 transition-opacity" />
           <img 
-            src="/logo.png" 
+            src={APP_LOGO} 
             alt="معروف - كاشف الأرقام" 
-            className="relative w-20 h-20 md:w-24 md:h-24 rounded-2xl object-cover shadow-[0_10px_25px_rgba(0,0,0,0.6)] border-2 border-[#ffcc00]/60 transform group-hover:scale-105 transition-transform"
+            loading="eager"
+            decoding="sync"
+            fetchPriority="high"
+            width="96"
+            height="96"
+            className="relative w-20 h-20 md:w-24 md:h-24 rounded-2xl object-cover shadow-[0_10px_25px_rgba(0,0,0,0.6)] border-2 border-[#ffcc00]/60 transform group-hover:scale-105 transition-transform shrink-0"
           />
         </div>
 
@@ -328,55 +334,79 @@ export default function SearchSection({
         </div>
       </div>
 
-      {/* Main Search Glassmorphism Card (Inspired by Logo's sleek phone bezel) */}
-      <div className="bg-gradient-to-br from-[#071948]/90 via-[#0a2368]/95 to-[#041030]/95 border-2 border-[#0d52ff]/40 rounded-3xl p-5 md:p-6 shadow-[0_15px_40px_rgba(2,11,39,0.7)] backdrop-blur-md relative overflow-hidden">
-        {/* Subtle decorative curved golden light trace matching the logo */}
-        <div className="absolute -top-16 -right-16 w-36 h-36 bg-[#ffcc00]/10 rounded-full blur-2xl pointer-events-none" />
-        <div className="absolute -bottom-16 -left-16 w-36 h-36 bg-[#0d52ff]/20 rounded-full blur-2xl pointer-events-none" />
+      {/* Main Search Glassmorphism Card (Inspired by Logo's sleek phone bezel & golden waves) */}
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+        className="bg-gradient-to-br from-[#071948]/95 via-[#0a2368]/95 to-[#041030]/95 border-2 border-[#0d52ff]/50 hover:border-[#ffcc00]/60 rounded-3xl p-5 md:p-6 shadow-[0_20px_50px_rgba(2,11,39,0.8)] backdrop-blur-xl relative overflow-hidden transition-all duration-300 group"
+      >
+        {/* Animated dynamic pulse waves echoing the logo's yellow signal arcs */}
+        <div className="absolute -top-20 -right-20 w-44 h-44 bg-[#ffcc00]/15 rounded-full blur-3xl pointer-events-none animate-pulse" />
+        <div className="absolute -bottom-20 -left-20 w-44 h-44 bg-[#0d52ff]/25 rounded-full blur-3xl pointer-events-none animate-pulse" style={{ animationDelay: '1s' }} />
 
         <form onSubmit={(e) => handleSearchSubmit(e, 'standard')} className="space-y-4 relative z-10">
-          <div className="space-y-1.5 text-right">
-            <label className="text-[11px] text-[#ffcc00] font-bold tracking-wider uppercase flex items-center justify-between">
-              <span>أدخل الرقم اليمني (9 أرقام)</span>
-              <span className="text-[10px] text-slate-400 font-mono font-normal">مثال: 771234567</span>
-            </label>
-            <div className="relative">
+          <div className="space-y-2 text-right">
+            <div className="flex items-center justify-between">
+              <label className="text-xs text-[#ffcc00] font-black tracking-wider uppercase flex items-center gap-1.5">
+                <span className="inline-block w-2 h-2 rounded-full bg-[#ffcc00] shadow-[0_0_8px_#ffcc00]" />
+                <span>أدخل الرقم اليمني (9 أرقام)</span>
+              </label>
+              <span className="text-[10px] text-slate-300 font-mono bg-black/40 px-2 py-0.5 rounded-md border border-[#0d52ff]/30">
+                مثال: 771234567
+              </span>
+            </div>
+            
+            <div className="relative group/input">
               <input
                 type="tel"
                 value={phoneQuery}
                 onChange={(e) => setPhoneQuery(e.target.value.replace(/[^\d]/g, '').substring(0, 9))}
                 placeholder="771234567"
-                className="w-full text-left font-mono font-black text-xl tracking-widest pl-4 pr-12 py-3.5 rounded-2xl bg-[#020b24]/80 border-2 border-[#0d52ff]/30 text-white focus:border-[#ffcc00] focus:ring-2 focus:ring-[#ffcc00]/30 transition-all outline-none shadow-inner"
+                className="w-full text-left font-mono font-black text-xl tracking-widest pl-4 pr-12 py-4 rounded-2xl bg-[#020b24]/90 border-2 border-[#0d52ff]/40 text-white placeholder-slate-600 focus:border-[#ffcc00] focus:ring-4 focus:ring-[#ffcc00]/20 transition-all duration-200 outline-none shadow-inner"
                 dir="ltr"
               />
-              <div className="absolute top-1/2 -translate-y-1/2 right-3.5 text-[#ffcc00]">
-                <Search className="w-5 h-5" />
-              </div>
+              <motion.div 
+                animate={{ scale: phoneQuery.length > 0 ? [1, 1.15, 1] : 1 }}
+                transition={{ duration: 0.3 }}
+                className="absolute top-1/2 -translate-y-1/2 right-3.5 text-[#ffcc00] group-focus-within/input:scale-110 transition-transform pointer-events-none"
+              >
+                <Search className="w-6 h-6 stroke-[2.5]" />
+              </motion.div>
             </div>
           </div>
 
           {errorState && (
-            <div className="p-3 text-xs text-red-200 bg-red-950/40 border border-red-500/40 rounded-xl text-right flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
-              <span>{errorState}</span>
-            </div>
+            <motion.div 
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-3.5 text-xs text-red-200 bg-red-950/60 border border-red-500/50 rounded-2xl text-right flex items-start gap-2 shadow-md"
+            >
+              <AlertTriangle className="w-4.5 h-4.5 shrink-0 mt-0.5 text-red-400" />
+              <span className="font-medium leading-relaxed">{errorState}</span>
+            </motion.div>
           )}
 
-          {/* Glowing Search Button (Pure Sun Gold from Logo) */}
-          <button
+          {/* Glowing Animated Search Button with tactile scale & wave glow */}
+          <motion.button
+            whileHover={{ scale: 1.015, boxShadow: '0 0 35px rgba(255, 204, 0, 0.55)' }}
+            whileTap={{ scale: 0.985 }}
             type="submit"
             disabled={loading}
-            className="w-full py-3.5 bg-gradient-to-r from-[#ffcc00] via-[#ffb300] to-[#f59e0b] hover:brightness-110 active:scale-[0.99] text-slate-950 font-black text-sm md:text-base rounded-2xl shadow-[0_0_25px_rgba(255,204,0,0.35)] transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-4 bg-gradient-to-r from-[#ffcc00] via-[#ffb300] to-[#f59e0b] text-slate-950 font-black text-base rounded-2xl shadow-[0_0_25px_rgba(255,204,0,0.35)] transition-all flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed select-none"
           >
             {loading ? (
-              <RefreshCw className="w-5 h-5 animate-spin text-slate-950" />
+              <>
+                <RefreshCw className="w-5 h-5 animate-spin text-slate-950" />
+                <span>جارٍ فحص قاعدة البيانات والهوية...</span>
+              </>
             ) : (
               <>
                 <Search className="w-5 h-5 text-slate-950 stroke-[2.5]" />
                 <span>بحث فوري عن الهوية</span>
               </>
             )}
-          </button>
+          </motion.button>
         </form>
 
         {/* Sync Reminder & Activation Constraint */}
@@ -404,11 +434,11 @@ export default function SearchSection({
           <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between text-xs text-gray-400">
             <span>رصيد البحث اليومي المستمر</span>
             <span className="font-bold text-white flex items-center gap-1">
-              <span className="text-[#e5c158] text-sm">{currentUser.searchBalance}</span> / 3 عمليات بحث
+              <span className="text-[#ffcc00] text-sm font-black">{currentUser.searchBalance}</span> / 3 عمليات بحث
             </span>
           </div>
         )}
-      </div>
+      </motion.div>
 
       {/* SEARCH RESULTS VIEW (Follows layout mockup 2) */}
       <AnimatePresence>

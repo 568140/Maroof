@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ShieldCheck, Smartphone, ShieldAlert, RefreshCw, X } from 'lucide-react';
 import { User } from '../types';
 import { safeFetchJson } from '../utils/apiHelper';
+import { APP_LOGO } from '../assets/logoBase64';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -126,9 +127,14 @@ export default function AuthModal({
             {/* Header branding with Logo */}
             <div className="text-center space-y-2.5 pb-5 border-b border-white/10 flex flex-col items-center">
               <img 
-                src="/logo.png" 
+                src={APP_LOGO} 
                 alt="شعار معروف" 
-                className="w-16 h-16 rounded-2xl object-cover border-2 border-[#ffcc00]/50 shadow-[0_0_20px_rgba(13,82,255,0.4)]"
+                loading="eager"
+                decoding="sync"
+                fetchPriority="high"
+                width="64"
+                height="64"
+                className="w-16 h-16 rounded-2xl object-cover border-2 border-[#ffcc00]/50 shadow-[0_0_20px_rgba(13,82,255,0.4)] shrink-0"
               />
               <div>
                 <h3 className="text-white text-lg font-black">توثيق الدخول في تطبيق معروف</h3>

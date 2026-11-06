@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import { Menu, User, Sparkles, Coins, LogOut, ShieldCheck, HelpCircle, Settings, Bell, Search, History, Gift } from 'lucide-react';
 import { User as UserType } from '../types';
+import { APP_LOGO } from '../assets/logoBase64';
 
 interface HeaderProps {
   currentUser: UserType | null;
@@ -40,9 +41,14 @@ export default function Header({
           {/* Logo with official attached visual identity */}
           <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setActiveTab('search')}>
             <img 
-              src="/logo.png" 
+              src={APP_LOGO} 
               alt="شعار معروف" 
-              className="w-10 h-10 rounded-xl object-cover shadow-[0_0_15px_rgba(13,82,255,0.4)] border border-[#ffcc00]/40"
+              loading="eager"
+              decoding="sync"
+              fetchPriority="high"
+              width="40"
+              height="40"
+              className="w-10 h-10 rounded-xl object-cover shadow-[0_0_15px_rgba(13,82,255,0.4)] border border-[#ffcc00]/40 shrink-0"
             />
             <div className="flex flex-col">
               <span className="text-white font-extrabold text-lg tracking-wider font-display">معروف</span>
