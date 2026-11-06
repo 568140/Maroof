@@ -35,6 +35,7 @@ public class MainActivity extends Activity {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         settings.setMediaPlaybackRequiresUserGesture(true);
@@ -63,10 +64,10 @@ public class MainActivity extends Activity {
             }
         });
         webView.addJavascriptInterface(new ContactsBridge(), "AndroidContacts");
-        // Load the latest compiled UI from the APK itself so the app does not
-        // depend on waiting for a Vercel deployment. The native bridge remains
-        // available to the page for Android contact synchronization.
-        webView.loadUrl("https://appassets.androidplatform.net/assets/index.html");
+        // Always load the deployed site so UI changes published to Vercel are
+        // available in the app without rebuilding the APK. The native bridge
+        // remains available to the page for Android contact synchronization.
+        webView.loadUrl("https://maroof-beta.vercel.app/");
     }
 
     private void installJavascriptBridge() {
