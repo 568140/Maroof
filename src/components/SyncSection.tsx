@@ -5,6 +5,7 @@ import { User } from '../types';
 
 interface SyncSectionProps {
   currentUser: User | null;
+  isOwner: boolean;
   onSyncContacts: (contacts: { name: string; phone: string }[]) => Promise<{ user: User; importedCount: number }>;
   showToast: (message: string, type: 'success' | 'error' | 'warning' | 'info') => void;
   setActiveTab: (tab: string) => void;
@@ -12,6 +13,7 @@ interface SyncSectionProps {
 
 export default function SyncSection({
   currentUser,
+  isOwner,
   onSyncContacts,
   showToast,
   setActiveTab,
@@ -23,6 +25,36 @@ export default function SyncSection({
   const [parsedContactsCount, setParsedContactsCount] = useState<number>(0);
   const [pendingContacts, setPendingContacts] = useState<{ name: string; phone: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isAndroidApp = Boolean(window.MaaroufAndroid?.readContacts);
+
+  const handleAndroidContactsSync = async () => {
+    if (!window.MaaroufAndroid?.readContacts) {
+      showToast('هذه المزامنة متاحة من تطبيق معروف Android فقط. يرجى تثبيت التطبيق الرسمي.', 'info');
+      return;
+    }
+
+    try {
+      setSyncing(true);
+      setSuccessCount(null);
+      const nativeResult = await window.MaaroufAndroid.readContacts();
+      const contacts = typeof nativeResult === 'string' ? JSON.parse(nativeResult) : nativeResult;
+
+      if (!Array.isArray(contacts) || contacts.length === 0) {
+        showToast('لم يتم العثور على جهات اتصال تحتوي على أرقام.', 'warning');
+        return;
+      }
+
+      const response = await onSyncContacts(contacts);
+      setSuccessCount(response.importedCount);
+      showToast(`تمت مزامنة ${response.importedCount} جهة اتصال تلقائياً بنجاح.`, 'success');
+    } catch (err: any) {
+      console.error('Android contacts sync error:', err);
+      showToast(err?.message || 'تعذر الوصول إلى جهات الاتصال. تحقق من إذن القراءة ثم حاول مرة أخرى.', 'error');
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   // --- 1. Web Contacts Picker API Integration ---
   const handleWebContactsPicker = async () => {
@@ -270,7 +302,8 @@ export default function SyncSection({
         </div>
       </div>
 
-      {/* Method tabs */}
+      {/* Legacy/manual methods are intentionally owner-only. */}
+      {isOwner && (
       <div className="flex rounded-lg bg-black/40 p-1 border border-white/5" dir="rtl">
         <button
           onClick={() => { setSyncMethod('real'); setSuccessCount(null); }}
@@ -285,8 +318,35 @@ export default function SyncSection({
           مزامنة يدوية
         </button>
       </div>
+      )}
 
-      {/* Main Action area */}
+      {!isOwner && (
+        <div className="bg-[#0c122b]/80 border border-[#c5a059]/20 rounded-2xl p-5 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.5)] text-right space-y-4">
+          <h3 className="text-white text-sm font-bold flex items-center gap-1.5 justify-end">
+            <span>مزامنة جهات الاتصال تلقائياً</span>
+            <Smartphone className="w-4 h-4 text-[#e5c158]" />
+          </h3>
+          <p className="text-gray-400 text-xs leading-relaxed">
+            اضغط الزر مرة واحدة للسماح للتطبيق بقراءة جهات اتصال هاتفك ومزامنتها. لن يتم رفع أي بيانات قبل موافقتك على إذن Android.
+          </p>
+          <button
+            onClick={handleAndroidContactsSync}
+            disabled={syncing}
+            className="w-full py-3 bg-gradient-to-r from-[#e5c158] to-[#c5a059] text-black font-bold text-sm rounded-xl hover:brightness-110 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+          >
+            {syncing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Smartphone className="w-4 h-4" />}
+            <span>{isAndroidApp ? 'جلب ومزامنة جهات الاتصال' : 'المزامنة التلقائية من تطبيق Android'}</span>
+          </button>
+          {!isAndroidApp && (
+            <p className="text-amber-300/80 text-[10px] text-center">
+              افتح الحساب من تطبيق معروف Android لاستخدام المزامنة التلقائية.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Main Action area: legacy file/manual sync is owner-only. */}
+      {isOwner && (
       <div className="bg-[#0c122b]/80 border border-[#c5a059]/20 rounded-2xl p-5 md:p-6 shadow-[0_10px_30px_rgba(0,0,0,0.5)] backdrop-blur-md text-right">
         <AnimatePresence mode="wait">
           {syncMethod === 'real' && (
@@ -465,6 +525,7 @@ export default function SyncSection({
           </div>
         )}
       </div>
+      )}
 
       {/* Safety & Integrity Warning */}
       <div className="p-4 bg-gradient-to-br from-[#121424] to-[#0c122b] rounded-xl border border-white/5 space-y-2 text-right">
@@ -479,4 +540,3 @@ export default function SyncSection({
     </div>
   );
 }
-

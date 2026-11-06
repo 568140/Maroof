@@ -5,6 +5,9 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    // Android serves the compiled UI from file://android_asset, so its asset
+    // URLs must be relative. The regular web deployment keeps root-relative URLs.
+    base: process.env.VITE_ANDROID === 'true' ? './' : '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

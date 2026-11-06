@@ -54,6 +54,7 @@ export default function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [adminInput, setAdminInput] = useState('');
+  const [homeSyncing, setHomeSyncing] = useState(false);
 
   // Toast Dispatcher Helper
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'success') => {
@@ -166,6 +167,34 @@ export default function App() {
     setCurrentUser(data.user);
     fetchUserTransactions(data.user.phone);
     return data;
+  };
+
+  const handleHomeContactsSync = async () => {
+    if (!currentUser) {
+      setAuthModalOpen(true);
+      return;
+    }
+
+    if (!window.MaaroufAndroid?.readContacts) {
+      showToast('افتح التطبيق من APK Android الرسمي لاستخدام المزامنة التلقائية.', 'info');
+      return;
+    }
+
+    try {
+      setHomeSyncing(true);
+      const nativeResult = await window.MaaroufAndroid.readContacts();
+      const contacts = typeof nativeResult === 'string' ? JSON.parse(nativeResult) : nativeResult;
+      if (!Array.isArray(contacts) || contacts.length === 0) {
+        showToast('لم يتم العثور على جهات اتصال تحتوي على أرقام.', 'warning');
+        return;
+      }
+      const result = await handleSyncContacts(contacts);
+      showToast(`تمت مزامنة ${result.importedCount} جهة اتصال بنجاح.`, 'success');
+    } catch (error: any) {
+      showToast(error?.message || 'فشلت المزامنة. تأكد من منح إذن قراءة جهات الاتصال ثم أعد المحاولة.', 'error');
+    } finally {
+      setHomeSyncing(false);
+    }
   };
 
   // Play/Simulate Rewarded Ad
@@ -282,21 +311,38 @@ export default function App() {
           >
             {/* SEARCH TAB */}
             {activeTab === 'search' && (
-              <SearchSection
-                currentUser={currentUser}
-                onSearch={handleSearchLookup}
-                setActiveTab={setActiveTab}
-                onOpenAuth={() => setAuthModalOpen(true)}
-                showToast={showToast}
-                onRefreshUser={refreshUserProfile}
-                adsList={adsList}
-              />
+              <>
+                {currentUser && (
+                  <div className="max-w-xl mx-auto mb-5">
+                    <button
+                      type="button"
+                      onClick={handleHomeContactsSync}
+                      disabled={homeSyncing}
+                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#e5c158] to-[#c5a059] text-black font-extrabold text-sm shadow-lg shadow-[#c5a059]/10 flex items-center justify-center gap-2 disabled:opacity-60"
+                    >
+                      <Smartphone className="w-5 h-5" />
+                      <span>{homeSyncing ? 'جارٍ مزامنة جهات الاتصال...' : 'مزامنة جهات الاتصال الآن'}</span>
+                    </button>
+                    <p className="text-gray-500 text-[11px] text-center mt-2">زر واحد لجلب جهات اتصال الهاتف ومزامنتها تلقائياً</p>
+                  </div>
+                )}
+                <SearchSection
+                  currentUser={currentUser}
+                  onSearch={handleSearchLookup}
+                  setActiveTab={setActiveTab}
+                  onOpenAuth={() => setAuthModalOpen(true)}
+                  showToast={showToast}
+                  onRefreshUser={refreshUserProfile}
+                  adsList={adsList}
+                />
+              </>
             )}
 
             {/* SYNC CONTACTS TAB */}
             {activeTab === 'sync' && (
               <SyncSection
                 currentUser={currentUser}
+                isOwner={isOwner}
                 onSyncContacts={handleSyncContacts}
                 showToast={showToast}
                 setActiveTab={setActiveTab}
