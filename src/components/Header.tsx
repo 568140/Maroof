@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Menu, User, Sparkles, Coins, LogOut, ShieldCheck, HelpCircle, Settings, Bell, Search, History, Gift } from 'lucide-react';
 import { User as UserType } from '../types';
 import { APP_LOGO } from '../assets/logoBase64';
+import { APP_AVATAR } from '../assets/avatarBase64';
 
 interface HeaderProps {
   currentUser: UserType | null;
@@ -76,20 +77,39 @@ export default function Header({
                 <span className="text-slate-300">/ 3 عمليات مجانية</span>
               </div>
 
-              {/* User Avatar Action */}
+              {/* User Avatar Action (with official high-res character mascot) */}
               <button
                 onClick={() => setActiveTab('profile')}
-                className={`w-9 h-9 rounded-full bg-[#0d2a7a] border ${activeTab === 'profile' ? 'border-[#ffcc00] shadow-[0_0_10px_rgba(255,204,0,0.4)]' : 'border-[#0d52ff]/40'} flex items-center justify-center text-white hover:border-[#ffcc00] transition-all`}
+                className={`w-10 h-10 rounded-full bg-[#0d2a7a] border-2 ${activeTab === 'profile' ? 'border-[#ffcc00] shadow-[0_0_15px_rgba(255,204,0,0.5)]' : 'border-[#ffcc00]/50 hover:border-[#ffcc00]'} overflow-hidden flex items-center justify-center p-0.5 transition-all shadow-md group`}
+                title="الملف الشخصي"
               >
-                <User className="w-4 h-4 text-[#ffcc00]" />
+                <img
+                  src={APP_AVATAR}
+                  alt="المحقق معروف"
+                  loading="eager"
+                  decoding="sync"
+                  fetchPriority="high"
+                  width="40"
+                  height="40"
+                  className="w-full h-full object-cover rounded-full transform group-hover:scale-105 transition-transform"
+                />
               </button>
             </div>
           ) : (
             <button
               onClick={onOpenAuth}
-              className="px-4 py-2 text-xs font-bold text-slate-950 bg-gradient-to-r from-[#ffcc00] to-[#f59e0b] rounded-xl shadow-[0_0_15px_rgba(255,204,0,0.3)] hover:brightness-110 transition-all transform active:scale-95 flex items-center gap-1"
+              className="px-3.5 py-1.5 text-xs font-bold text-slate-950 bg-gradient-to-r from-[#ffcc00] to-[#f59e0b] rounded-xl shadow-[0_0_15px_rgba(255,204,0,0.3)] hover:brightness-110 transition-all transform active:scale-95 flex items-center gap-2 group"
             >
-              <User className="w-3.5 h-3.5" />
+              <img
+                src={APP_AVATAR}
+                alt="المحقق معروف"
+                loading="eager"
+                decoding="sync"
+                fetchPriority="high"
+                width="28"
+                height="28"
+                className="w-7 h-7 rounded-full object-cover border border-slate-900 shadow-sm"
+              />
               <span>تسجيل الدخول</span>
             </button>
           )}
@@ -144,14 +164,23 @@ export default function Header({
 
           {/* Profile Quick Summary */}
           {currentUser ? (
-            <div className="mt-6 p-4 rounded-xl bg-gradient-to-br from-[#0e1634] to-[#151f4c] border border-[#c5a059]/20 flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-[#1e295d] border border-[#c5a059]/30 flex items-center justify-center text-[#e5c158]">
-                <User className="w-6 h-6" />
+            <div className="mt-6 p-4 rounded-xl bg-gradient-to-br from-[#0e1634] to-[#151f4c] border border-[#ffcc00]/30 flex items-center gap-3">
+              <div className="w-13 h-13 rounded-full bg-[#1e295d] border-2 border-[#ffcc00]/50 overflow-hidden flex items-center justify-center shrink-0 shadow-md">
+                <img
+                  src={APP_AVATAR}
+                  alt="المحقق معروف"
+                  loading="eager"
+                  decoding="sync"
+                  fetchPriority="high"
+                  width="52"
+                  height="52"
+                  className="w-full h-full object-cover"
+                />
               </div>
               <div className="flex flex-col flex-1">
                 <span className="text-white font-bold text-sm">مستخدم معروف</span>
-                <span className="text-gray-400 text-xs mt-0.5">{currentUser.phone}</span>
-                <div className="mt-2 flex items-center gap-1.5 text-[10px] bg-black/30 w-fit px-2 py-0.5 rounded text-[#e5c158] font-bold">
+                <span className="text-gray-400 text-xs mt-0.5 font-mono">{currentUser.phone}</span>
+                <div className="mt-2 flex items-center gap-1.5 text-[10px] bg-black/40 w-fit px-2.5 py-0.5 rounded-full border border-[#ffcc00]/30 text-[#ffcc00] font-bold">
                   <Coins className="w-3 h-3" />
                   <span>{currentUser.points} نقطة</span>
                 </div>

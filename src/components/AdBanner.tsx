@@ -61,19 +61,27 @@ export default function AdBanner({
   }
 
   if (!ad) {
-    // Show a default elegant premium sponsor placeholder banner
+    // Show a default elegant premium sponsor placeholder banner with direct WhatsApp connection
     return (
-      <div className="w-full rounded-xl bg-gradient-to-r from-[#0d1430] to-[#121c3e] border border-[#c5a059]/20 p-3.5 flex items-center justify-between text-right shadow-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-[9px] font-bold text-[#e5c158] bg-[#c5a059]/10 px-1.5 py-0.5 rounded border border-[#c5a059]/30">إعلان راعي</span>
-          <span className="text-gray-400 text-xs">هل ترغب في رعاية منصة معروف وعرض شركتك هنا؟</span>
+      <div 
+        onClick={() => {
+          window.open('https://wa.me/967774919194?text=' + encodeURIComponent('السلام عليكم، بخصوص منصة معروف'), '_blank', 'noopener,noreferrer');
+        }}
+        className="w-full rounded-2xl bg-gradient-to-r from-[#06184a] via-[#092266] to-[#041030] border-2 border-[#0d52ff]/40 hover:border-[#ffcc00] p-3.5 flex items-center justify-between text-right shadow-md cursor-pointer transition-all group"
+      >
+        <div className="flex items-center gap-2.5">
+          <span className="text-[10px] font-bold text-[#ffcc00] bg-[#ffcc00]/15 px-2 py-0.5 rounded-lg border border-[#ffcc00]/30">رعاية وتواصل</span>
+          <span className="text-slate-300 text-xs font-medium">تواصل مباشر عبر واتساب مع إدارة منصة معروف</span>
         </div>
         <a 
-          href="mailto:sponsor@maarouf.com?subject=Sponsorship%20Inquiry"
-          className="text-xs text-[#e5c158] hover:underline flex items-center gap-1 font-bold"
+          href="https://wa.me/967774919194?text=%D8%A7%D9%84%D8%B3%D9%84%D8%A7%D9%85%20%D8%B9%D9%84%D9%8A%D9%83%D9%85%D8%8C%20%D8%A8%D8%AE%D8%B5%D9%88%D8%B5%20%D9%85%D9%86%D8%B5%D8%A9%20%D9%85%D8%B9%D8%B1%D9%88%D9%81"
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="text-xs text-[#ffcc00] group-hover:underline flex items-center gap-1 font-bold shrink-0 bg-black/30 px-3 py-1.5 rounded-xl border border-[#ffcc00]/30 shadow-sm"
         >
-          <span>تواصل معنا</span>
-          <ArrowUpRight className="w-3 h-3" />
+          <span>واتساب</span>
+          <ArrowUpRight className="w-3.5 h-3.5" />
         </a>
       </div>
     );
@@ -83,12 +91,13 @@ export default function AdBanner({
     <div 
       onClick={() => {
         if (onAdClick) onAdClick(ad.id);
-        if (ad.linkUrl) window.open(ad.linkUrl, '_blank', 'noopener,noreferrer');
+        const targetUrl = ad.linkUrl || 'https://wa.me/967774919194?text=' + encodeURIComponent('السلام عليكم، بخصوص منصة معروف');
+        window.open(targetUrl, '_blank', 'noopener,noreferrer');
       }}
-      className="w-full rounded-xl bg-[#090e24] hover:bg-[#0d1430] border border-[#c5a059]/20 p-3.5 flex items-center justify-between text-right cursor-pointer shadow-md hover:border-[#e5c158] transition-all"
+      className="w-full rounded-2xl bg-gradient-to-r from-[#06184a] via-[#092266] to-[#041030] hover:border-[#ffcc00] border-2 border-[#0d52ff]/40 p-3.5 flex items-center justify-between text-right cursor-pointer shadow-md transition-all group"
     >
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded bg-[#c5a059]/10 border border-[#c5a059]/30 flex items-center justify-center text-[#e5c158] overflow-hidden shrink-0">
+        <div className="w-10 h-10 rounded-xl bg-[#ffcc00]/10 border border-[#ffcc00]/30 flex items-center justify-center text-[#ffcc00] overflow-hidden shrink-0">
           {ad.mediaUrl ? (
             <img src={ad.mediaUrl} alt={ad.title} className="w-full h-full object-cover" />
           ) : (
@@ -96,16 +105,16 @@ export default function AdBanner({
           )}
         </div>
         <div>
-          <span className="text-[9px] font-bold text-[#e5c158] bg-[#c5a059]/10 px-1.5 py-0.5 rounded border border-[#c5a059]/20 inline-block mb-1">
+          <span className="text-[9px] font-bold text-[#ffcc00] bg-[#ffcc00]/10 px-2 py-0.5 rounded-lg border border-[#ffcc00]/20 inline-block mb-1">
             {ad.source === 'admob' ? 'AdMob Banner' : 'رعاية مميزة'}
           </span>
           <p className="text-white text-xs font-bold line-clamp-1 max-w-[200px] sm:max-w-[400px]">{ad.title}</p>
         </div>
       </div>
 
-      <div className="flex items-center gap-1 text-[10px] text-gray-500 font-bold">
-        <span>تصفح</span>
-        <ArrowUpRight className="w-3.5 h-3.5 text-[#e5c158]" />
+      <div className="flex items-center gap-1 text-[11px] text-[#ffcc00] font-bold shrink-0 bg-black/30 px-3 py-1.5 rounded-xl border border-[#ffcc00]/30">
+        <span>واتساب</span>
+        <ArrowUpRight className="w-3.5 h-3.5" />
       </div>
     </div>
   );

@@ -346,17 +346,17 @@ export default function App() {
             {activeTab === 'search' && (
               <>
                 {currentUser && !syncedInSession && (
-                  <div className="max-w-xs mx-auto mb-4 text-center">
+                  <div className="max-w-xs mx-auto mb-4 flex justify-center">
                     <button
                       type="button"
                       onClick={handleHomeContactsSync}
                       disabled={homeSyncing}
-                      className="w-full py-2 px-3.5 rounded-lg bg-gradient-to-r from-[#e5c158] to-[#c5a059] hover:from-[#f3e5ab] hover:to-[#e5c158] text-black font-extrabold text-xs shadow-md shadow-[#c5a059]/15 flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 active:scale-95"
+                      style={{ width: '180.995px', height: '30.9902px' }}
+                      className="px-3.5 rounded-lg bg-gradient-to-r from-[#e5c158] to-[#c5a059] hover:from-[#f3e5ab] hover:to-[#e5c158] text-black font-extrabold text-xs shadow-md shadow-[#c5a059]/15 flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 active:scale-95"
                     >
                       <Smartphone className="w-4 h-4 shrink-0" />
-                      <span>{homeSyncing ? 'جارٍ مزامنة جهات الاتصال...' : 'مزامنة جهات الاتصال الآن'}</span>
+                      <span>{homeSyncing ? 'جارٍ التحديث...' : 'تحديث'}</span>
                     </button>
-                    <p className="text-gray-500 text-[10px] text-center mt-1.5">زر واحد لجلب جهات اتصال الهاتف ومزامنتها تلقائياً</p>
                   </div>
                 )}
                 <SearchSection

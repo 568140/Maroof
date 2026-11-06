@@ -357,22 +357,33 @@ export default function SearchSection({
               </span>
             </div>
             
-            <div className="relative group/input">
-              <input
-                type="tel"
-                value={phoneQuery}
-                onChange={(e) => setPhoneQuery(e.target.value.replace(/[^\d]/g, '').substring(0, 9))}
-                placeholder="771234567"
-                className="w-full text-left font-mono font-black text-xl tracking-widest pl-4 pr-12 py-4 rounded-2xl bg-[#020b24]/90 border-2 border-[#0d52ff]/40 text-white placeholder-slate-600 focus:border-[#ffcc00] focus:ring-4 focus:ring-[#ffcc00]/20 transition-all duration-200 outline-none shadow-inner"
-                dir="ltr"
+            <div className="relative group/input p-[2.5px] rounded-2xl overflow-hidden shadow-lg transition-all">
+              {/* Animated rotating border light stream matching the logo's electric blue and sun gold */}
+              <div 
+                className="absolute inset-[-100%] bg-[conic-gradient(from_0deg,#ffcc00_0%,#0d52ff_25%,#ffb300_50%,#062cb2_75%,#ffcc00_100%)] animate-[spin_4s_linear_infinite] opacity-75 group-focus-within/input:opacity-100 group-hover/input:opacity-95 blur-[1px] transition-opacity"
               />
-              <motion.div 
-                animate={{ scale: phoneQuery.length > 0 ? [1, 1.15, 1] : 1 }}
-                transition={{ duration: 0.3 }}
-                className="absolute top-1/2 -translate-y-1/2 right-3.5 text-[#ffcc00] group-focus-within/input:scale-110 transition-transform pointer-events-none"
-              >
-                <Search className="w-6 h-6 stroke-[2.5]" />
-              </motion.div>
+              {/* Inner ambient soft glow */}
+              <div 
+                className="absolute inset-0 bg-[#020b24] rounded-2xl pointer-events-none"
+              />
+
+              <div className="relative">
+                <input
+                  type="tel"
+                  value={phoneQuery}
+                  onChange={(e) => setPhoneQuery(e.target.value.replace(/[^\d]/g, '').substring(0, 9))}
+                  placeholder="771234567"
+                  className="w-full text-left font-mono font-black text-xl tracking-widest pl-4 pr-12 py-4 rounded-2xl bg-[#020b24]/95 text-white placeholder-slate-600 focus:outline-none transition-all duration-200 shadow-inner relative z-10"
+                  dir="ltr"
+                />
+                <motion.div 
+                  animate={{ scale: phoneQuery.length > 0 ? [1, 1.15, 1] : 1 }}
+                  transition={{ duration: 0.3 }}
+                  className="absolute top-1/2 -translate-y-1/2 right-3.5 text-[#ffcc00] group-focus-within/input:scale-110 transition-transform pointer-events-none z-20"
+                >
+                  <Search className="w-6 h-6 stroke-[2.5]" />
+                </motion.div>
+              </div>
             </div>
           </div>
 
