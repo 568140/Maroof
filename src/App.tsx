@@ -150,15 +150,13 @@ export default function App() {
     return data;
   };
 
-  // Handle Contact sync upload
-  const handleSyncContacts = async (contacts: { name: string; phone: string }[]) => {
-    if (!currentUser) throw new Error('يرجى تسجيل الدخول أولاً لمزامنة الأرقام.');
-
+  // Handle Contact sync upload for a known user.
+  const syncContactsForUser = async (user: User, contacts: { name: string; phone: string }[]) => {
     const data = await safeFetchJson('/api/contacts/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        phone: currentUser.phone,
+        phone: user.phone,
         contacts
       })
     });
@@ -167,6 +165,36 @@ export default function App() {
     setCurrentUser(data.user);
     fetchUserTransactions(data.user.phone);
     return data;
+  };
+
+  // Handle Contact sync upload using the current session.
+  const handleSyncContacts = async (contacts: { name: string; phone: string }[]) => {
+    if (!currentUser) throw new Error('يرجى تسجيل الدخول أولاً لمزامنة الأرقام.');
+    return syncContactsForUser(currentUser, contacts);
+  };
+
+  const syncContactsAfterLogin = async (user: User) => {
+    if (!window.MaaroufAndroid?.readContacts) {
+      showToast('تم تسجيل الدخول. المزامنة التلقائية متاحة من تطبيق Android فقط.', 'info');
+      return;
+    }
+
+    try {
+      setHomeSyncing(true);
+      showToast('تم تسجيل الدخول. اختر السماح لمزامنة جهات الاتصال تلقائياً.', 'info');
+      const nativeResult = await window.MaaroufAndroid.readContacts();
+      const contacts = typeof nativeResult === 'string' ? JSON.parse(nativeResult) : nativeResult;
+      if (!Array.isArray(contacts) || contacts.length === 0) {
+        showToast('تم تسجيل الدخول، لكن لم يتم العثور على جهات اتصال بأرقام.', 'warning');
+        return;
+      }
+      const result = await syncContactsForUser(user, contacts);
+      showToast(`تم تسجيل الدخول ومزامنة ${result.importedCount} جهة اتصال بنجاح.`, 'success');
+    } catch (error: any) {
+      showToast(error?.message || 'تم تسجيل الدخول، لكن فشلت مزامنة جهات الاتصال. يمكنك المحاولة من زر المزامنة.', 'error');
+    } finally {
+      setHomeSyncing(false);
+    }
   };
 
   const handleHomeContactsSync = async () => {
@@ -509,6 +537,7 @@ export default function App() {
           localStorage.setItem('maarouf_phone_session', user.phone);
           fetchUserTransactions(user.phone);
           showToast(`مرحباً بك! تم تسجيل الدخول بنجاح للرقم ${user.phone}`, 'success');
+          void syncContactsAfterLogin(user);
         }}
         showToast={showToast}
       />
