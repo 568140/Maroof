@@ -63,10 +63,10 @@ public class MainActivity extends Activity {
             }
         });
         webView.addJavascriptInterface(new ContactsBridge(), "AndroidContacts");
-        // Load the deployed site directly. This avoids device-specific WebView
-        // failures when resolving bundled file assets, while the native bridge
-        // remains available to the page for Android contact synchronization.
-        webView.loadUrl("https://maroof-beta.vercel.app/");
+        // Load the latest compiled UI from the APK itself so the app does not
+        // depend on waiting for a Vercel deployment. The native bridge remains
+        // available to the page for Android contact synchronization.
+        webView.loadUrl("https://appassets.androidplatform.net/assets/index.html");
     }
 
     private void installJavascriptBridge() {
