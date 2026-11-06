@@ -76,3 +76,22 @@ export interface AnalyticsStats {
   totalEarnings: number;
   topSearchedNumbers: { number: string; count: number }[];
 }
+
+export interface PlatformMetrics {
+  base: {
+    users: number;
+    searches: number;
+    contacts: number;
+  };
+  real: {
+    users: number;
+    searches: number;
+    contacts: number;
+  };
+  total: {
+    users: number;
+    searches: number;
+    contacts: number;
+  };
+}
+

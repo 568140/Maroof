@@ -184,10 +184,12 @@ var DbService = class {
   }
   static async saveUser(user) {
     await setDoc(doc(db, "users", user.id), user, { merge: true });
+    this.clearMetricsCache();
     return user;
   }
   static async deleteUser(id) {
     await deleteDoc(doc(db, "users", id));
+    this.clearMetricsCache();
     return true;
   }
   // --- Contacts / Numbers Service ---
@@ -255,6 +257,7 @@ var DbService = class {
     if (batchOperations > 0) {
       await batch.commit();
     }
+    this.clearMetricsCache();
     return addedCount;
   }
   static async searchNumbers(phoneNumber) {
@@ -262,6 +265,7 @@ var DbService = class {
     const searchDocRef = doc(db, "searchesCount", cleanNumber);
     try {
       await setDoc(searchDocRef, { count: increment(1) }, { merge: true });
+      void this.incrementSearchCounter();
     } catch (e) {
       console.warn("Increment search count failed:", e);
     }
@@ -327,6 +331,7 @@ var DbService = class {
       await batch.commit();
     }
     console.log(`[DbService] Stateless sync complete for user ${cleanUserPhone}. Processed: ${addedCount}`);
+    this.clearMetricsCache();
     return addedCount;
   }
   static async addContact(contact) {
@@ -445,17 +450,108 @@ var DbService = class {
       topSearchedNumbers: topSearched
     };
   }
-  static async resetAnalytics() {
-    const adsSnap = await getDocs(collection(db, "ads"));
+  static async resetAnalytics(target = "all") {
     const batch = writeBatch(db);
-    adsSnap.docs.forEach((docSnap) => {
-      batch.update(docSnap.ref, { views: 0, clicks: 0 });
-    });
-    const searchesSnap = await getDocs(collection(db, "searchesCount"));
-    searchesSnap.docs.forEach((docSnap) => {
-      batch.delete(docSnap.ref);
-    });
+    let message = "";
+    if (target === "all" || target === "earnings") {
+      const adsSnap = await getDocs(collection(db, "ads"));
+      adsSnap.docs.forEach((docSnap) => {
+        batch.update(docSnap.ref, { views: 0, clicks: 0 });
+      });
+      message = "\u062A\u0645 \u062A\u0635\u0641\u064A\u0631 \u0623\u0631\u0628\u0627\u062D \u0648\u0645\u0634\u0627\u0647\u062F\u0627\u062A \u0648\u0646\u0642\u0631\u0627\u062A \u0627\u0644\u0625\u0639\u0644\u0627\u0646\u0627\u062A \u0628\u0627\u0644\u0643\u0627\u0645\u0644 \u0628\u0646\u062C\u0627\u062D!";
+    }
+    if (target === "all" || target === "searches") {
+      const searchesSnap = await getDocs(collection(db, "searchesCount"));
+      searchesSnap.docs.forEach((docSnap) => {
+        batch.delete(docSnap.ref);
+      });
+      const platformStatsRef = doc(db, "metrics", "platform_stats");
+      batch.set(platformStatsRef, { searches: 0, resetAt: (/* @__PURE__ */ new Date()).toISOString() }, { merge: true });
+      message = target === "all" ? "\u062A\u0645 \u062A\u0635\u0641\u064A\u0631 \u062C\u0645\u064A\u0639 \u0627\u0644\u0625\u062D\u0635\u0627\u0626\u064A\u0627\u062A (\u0623\u0631\u0628\u0627\u062D \u0627\u0644\u0625\u0639\u0644\u0627\u0646\u0627\u062A + \u0639\u0645\u0644\u064A\u0627\u062A \u0627\u0644\u0628\u062D\u062B) \u0628\u0646\u062C\u0627\u062D!" : "\u062A\u0645 \u062A\u0635\u0641\u064A\u0631 \u062C\u0645\u064A\u0639 \u0633\u062C\u0644\u0627\u062A \u0648\u0639\u0645\u0644\u064A\u0627\u062A \u0627\u0644\u0628\u062D\u062B \u0628\u0646\u062C\u0627\u062D!";
+    }
     await batch.commit();
+    this.clearMetricsCache();
+    return { target, message };
+  }
+  static {
+    // --- Dynamic Platform Real-Time Metrics (Base + Real Firestore Data) ---
+    this.metricsCache = null;
+  }
+  static clearMetricsCache() {
+    this.metricsCache = null;
+  }
+  static async incrementSearchCounter() {
+    try {
+      const metricDocRef = doc(db, "metrics", "platform_stats");
+      await setDoc(metricDocRef, {
+        searches: increment(1),
+        lastSearchAt: (/* @__PURE__ */ new Date()).toISOString()
+      }, { merge: true });
+      if (this.metricsCache) {
+        this.metricsCache.data.real.searches += 1;
+        this.metricsCache.data.total.searches += 1;
+      }
+    } catch (err) {
+      console.warn("[DbService] Error incrementing platform search counter:", err);
+    }
+  }
+  static async getPlatformMetrics() {
+    const now = Date.now();
+    if (this.metricsCache && now - this.metricsCache.timestamp < 2500) {
+      return this.metricsCache.data;
+    }
+    const BASE_USERS = 1248563;
+    const BASE_SEARCHES = 12458963;
+    const BASE_CONTACTS = 45231789;
+    let realUsers = 0;
+    let realContacts = 0;
+    let realSearches = 0;
+    try {
+      const usersCountSnap = await getCountFromServer(collection(db, "users"));
+      realUsers = usersCountSnap.data().count;
+    } catch (err) {
+      console.warn("[DbService] Error counting users:", err);
+    }
+    try {
+      const contactsCountSnap = await getCountFromServer(collection(db, "contacts"));
+      realContacts = contactsCountSnap.data().count;
+    } catch (err) {
+      console.warn("[DbService] Error counting contacts:", err);
+    }
+    try {
+      const metricDoc = await getDoc(doc(db, "metrics", "platform_stats"));
+      if (metricDoc.exists()) {
+        realSearches = metricDoc.data().searches || 0;
+      } else {
+        const searchesCountSnap = await getCountFromServer(collection(db, "searchesCount"));
+        realSearches = searchesCountSnap.data().count;
+        await setDoc(doc(db, "metrics", "platform_stats"), {
+          searches: realSearches,
+          createdAt: (/* @__PURE__ */ new Date()).toISOString()
+        }, { merge: true });
+      }
+    } catch (err) {
+      console.warn("[DbService] Error fetching platform search metrics:", err);
+    }
+    const metrics = {
+      base: {
+        users: BASE_USERS,
+        searches: BASE_SEARCHES,
+        contacts: BASE_CONTACTS
+      },
+      real: {
+        users: realUsers,
+        searches: realSearches,
+        contacts: realContacts
+      },
+      total: {
+        users: BASE_USERS + realUsers,
+        searches: BASE_SEARCHES + realSearches,
+        contacts: BASE_CONTACTS + realContacts
+      }
+    };
+    this.metricsCache = { data: metrics, timestamp: now };
+    return metrics;
   }
 };
 
@@ -490,7 +586,7 @@ function createExpressApp() {
     if (req.url.startsWith("/api/api/")) {
       req.url = req.url.replace("/api/api/", "/api/");
     } else {
-      const apiPrefixes = ["/auth", "/contacts", "/search", "/ads", "/settings", "/transactions", "/admin", "/user"];
+      const apiPrefixes = ["/auth", "/contacts", "/search", "/ads", "/settings", "/transactions", "/admin", "/user", "/metrics"];
       const isKnownApi = apiPrefixes.some((prefix) => req.path.startsWith(prefix));
       if (isKnownApi && !req.url.startsWith("/api")) {
         req.url = "/api" + (req.url.startsWith("/") ? req.url : "/" + req.url);
@@ -508,6 +604,14 @@ function createExpressApp() {
       message: "\u0627\u0644\u062E\u0627\u062F\u0645 \u064A\u0639\u0645\u0644 \u0628\u0646\u062C\u0627\u062D \u0648\u0645\u0633\u062A\u0639\u062F \u0644\u0627\u0633\u062A\u0642\u0628\u0627\u0644 \u0627\u0644\u0637\u0644\u0628\u0627\u062A",
       timestamp: (/* @__PURE__ */ new Date()).toISOString()
     });
+  });
+  app3.get("/api/metrics", async (req, res) => {
+    try {
+      const metrics = await DbService.getPlatformMetrics();
+      res.json(metrics);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
   app3.get("/api/settings", async (req, res) => {
     try {
@@ -886,9 +990,10 @@ function createExpressApp() {
     }
   });
   app3.post("/api/admin/reset-stats", adminAuthMiddleware, async (req, res) => {
+    const { target } = req.body || {};
     try {
-      await DbService.resetAnalytics();
-      res.json({ message: "\u062A\u0645 \u0625\u0639\u0627\u062F\u0629 \u0636\u0628\u0637 \u062C\u0645\u064A\u0639 \u0627\u0644\u0625\u062D\u0635\u0627\u0626\u064A\u0627\u062A\u060C \u0633\u062C\u0644\u0627\u062A \u0627\u0644\u0628\u062D\u062B \u0648\u0623\u0631\u0628\u0627\u062D \u0627\u0644\u0625\u0639\u0644\u0627\u0646\u0627\u062A \u0625\u0644\u0649 \u0627\u0644\u0635\u0641\u0631 \u0628\u0646\u062C\u0627\u062D!" });
+      const result = await DbService.resetAnalytics(target || "all");
+      res.json({ message: result.message, target: result.target });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }

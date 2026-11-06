@@ -47,7 +47,7 @@ export function createExpressApp(): express.Express {
       req.url = req.url.replace('/api/api/', '/api/');
     } else {
       // Only prefix with /api if this is specifically an API route called without /api
-      const apiPrefixes = ['/auth', '/contacts', '/search', '/ads', '/settings', '/transactions', '/admin', '/user'];
+      const apiPrefixes = ['/auth', '/contacts', '/search', '/ads', '/settings', '/transactions', '/admin', '/user', '/metrics'];
       const isKnownApi = apiPrefixes.some(prefix => req.path.startsWith(prefix));
       if (isKnownApi && !req.url.startsWith('/api')) {
         req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
@@ -68,6 +68,16 @@ export function createExpressApp(): express.Express {
       message: 'الخادم يعمل بنجاح ومستعد لاستقبال الطلبات',
       timestamp: new Date().toISOString()
     });
+  });
+
+  // Dynamic Live Metrics (Fixed Base + Real Firestore Counters)
+  app.get('/api/metrics', async (req, res) => {
+    try {
+      const metrics = await DbService.getPlatformMetrics();
+      res.json(metrics);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // --- API ROUTES ---
@@ -575,11 +585,12 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
     }
   });
 
-  // Reset Admin Stats & Earnings
+  // Reset Admin Stats & Earnings (selective: target = 'all' | 'earnings' | 'searches')
   app.post('/api/admin/reset-stats', adminAuthMiddleware, async (req, res) => {
+    const { target } = req.body || {};
     try {
-      await DbService.resetAnalytics();
-      res.json({ message: 'تم إعادة ضبط جميع الإحصائيات، سجلات البحث وأرباح الإعلانات إلى الصفر بنجاح!' });
+      const result = await DbService.resetAnalytics(target || 'all');
+      res.json({ message: result.message, target: result.target });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -646,21 +657,22 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
     }
   });
 
-  // Database Management: List and search contacts
+  // Database Management: List and search contacts (fetches full real database)
   app.get('/api/admin/contacts', adminAuthMiddleware, async (req, res) => {
-    const { search } = req.query as { search: string };
+    const { search } = req.query as { search?: string };
     try {
       if (search) {
         const cleanSearch = search.trim();
         let contacts: Contact[] = [];
         if (/^\d+$/.test(cleanSearch)) {
-          contacts = await DbService.queryContactsByPhone(cleanSearch, 100);
+          contacts = await DbService.queryContactsByPhone(cleanSearch, 500);
         } else {
-          contacts = await DbService.queryContactsByName(cleanSearch, 100);
+          contacts = await DbService.queryContactsByName(cleanSearch, 500);
         }
         return res.json(contacts);
       }
-      const contacts = await DbService.getContactsLimited(100);
+      // Fetch full real database from Firestore
+      const contacts = await DbService.getContacts();
       res.json(contacts);
     } catch (err: any) {
       res.status(500).json({ error: err.message });

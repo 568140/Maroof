@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Info, Users, Database, ShieldAlert, Coins, Copy, Check, RefreshCw, Star, AlertTriangle, ArrowRight, Eye, Play, Clock, Sparkles, X } from 'lucide-react';
-import { User, Contact, Ad } from '../types';
+import { Search, Info, Users, Database, ShieldAlert, Coins, Copy, Check, RefreshCw, Star, AlertTriangle, ArrowRight, Eye, Play, Clock, Sparkles, X, Activity } from 'lucide-react';
+import { User, Contact, Ad, PlatformMetrics } from '../types';
 
 interface SearchSectionProps {
   currentUser: User | null;
@@ -11,6 +11,40 @@ interface SearchSectionProps {
   showToast: (message: string, type: 'success' | 'error' | 'warning' | 'info') => void;
   onRefreshUser?: () => Promise<void>;
   adsList?: Ad[];
+}
+
+// Hook for smooth animated counter roll
+function useAnimatedCounter(targetValue: number, duration: number = 700) {
+  const [current, setCurrent] = useState(targetValue);
+  const currentRef = useRef(current);
+  currentRef.current = current;
+
+  useEffect(() => {
+    const startValue = currentRef.current;
+    const diff = targetValue - startValue;
+    if (diff === 0) return;
+
+    const startTime = performance.now();
+    let animId: number;
+
+    const update = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      // Ease out cubic for realistic mechanical ticker feel
+      const ease = 1 - Math.pow(1 - progress, 3);
+      const nextVal = Math.round(startValue + diff * ease);
+      setCurrent(nextVal);
+
+      if (progress < 1) {
+        animId = requestAnimationFrame(update);
+      }
+    };
+
+    animId = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(animId);
+  }, [targetValue, duration]);
+
+  return current;
 }
 
 export default function SearchSection({
@@ -34,6 +68,48 @@ export default function SearchSection({
   });
   const [hasSearched, setHasSearched] = useState(false);
   const [errorState, setErrorState] = useState<string | null>(null);
+
+  // Dynamic Platform Real-Time Metrics State (Base + Real Firestore Data)
+  const [platformMetrics, setPlatformMetrics] = useState<PlatformMetrics>({
+    base: { users: 1248563, searches: 12458963, contacts: 45231789 },
+    real: { users: 0, searches: 0, contacts: 0 },
+    total: { users: 1248563, searches: 12458963, contacts: 45231789 }
+  });
+  const [pulseCard, setPulseCard] = useState<'users' | 'searches' | 'contacts' | null>(null);
+
+  // Animated tickers for the numbers
+  const animatedUsers = useAnimatedCounter(platformMetrics.total.users);
+  const animatedSearches = useAnimatedCounter(platformMetrics.total.searches);
+  const animatedContacts = useAnimatedCounter(platformMetrics.total.contacts);
+
+  // Fetch live metrics from server
+  const fetchLiveMetrics = useCallback(async () => {
+    try {
+      const res = await fetch('/api/metrics');
+      if (res.ok) {
+        const data: PlatformMetrics = await res.json();
+        setPlatformMetrics(data);
+      }
+    } catch {
+      // Non-blocking fallback
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLiveMetrics();
+    // Poll every 8 seconds for dynamic live updates as users join, search, and sync
+    const pollInterval = setInterval(fetchLiveMetrics, 8000);
+
+    const onMetricsUpdated = () => {
+      fetchLiveMetrics();
+    };
+    window.addEventListener('maarouf:metrics-updated', onMetricsUpdated);
+
+    return () => {
+      clearInterval(pollInterval);
+      window.removeEventListener('maarouf:metrics-updated', onMetricsUpdated);
+    };
+  }, [fetchLiveMetrics]);
 
   // Helper to map and sanitize raw search results from backend structure
   const mapRawResults = (raw: any[]): Contact[] => {
@@ -182,11 +258,23 @@ export default function SearchSection({
 
     setLoading(true);
     try {
+      // Optimistically increment live search counter immediately
+      setPlatformMetrics(prev => ({
+        ...prev,
+        real: { ...prev.real, searches: prev.real.searches + 1 },
+        total: { ...prev.total, searches: prev.total.searches + 1 }
+      }));
+      setPulseCard('searches');
+      setTimeout(() => setPulseCard(null), 1200);
+
       const response = await onSearch(cleanNum, type);
       setResults(mapRawResults(response.results));
       setSearchedNum(cleanNum);
       setHasSearched(true);
       saveToHistory(cleanNum);
+
+      // Notify other parts of the app
+      window.dispatchEvent(new CustomEvent('maarouf:metrics-updated'));
     } catch (err: any) {
       setErrorState(err.message || 'حدث خطأ أثناء البحث.');
     } finally {
@@ -501,30 +589,45 @@ export default function SearchSection({
         </div>
       )}
 
-      {/* Platform Real-Time Metrics (Follows reference dashboard metric layout) */}
+      {/* Platform Real-Time Metrics (Base + Real Firestore Data Dynamic Counter) */}
       <div className="grid grid-cols-3 gap-3 pt-4">
-        <div className="bg-[#0c122b]/60 border border-[#c5a059]/10 rounded-xl p-3 text-center space-y-1">
+        {/* Card 1: Users (1,248,563 + Real Users) */}
+        <div className={`bg-[#0c122b]/60 border ${pulseCard === 'users' ? 'border-[#e5c158] shadow-[0_0_15px_rgba(229,193,88,0.25)]' : 'border-[#c5a059]/10'} rounded-xl p-3 text-center space-y-1 transition-all duration-300 relative overflow-hidden group`}>
           <div className="flex justify-center text-[#e5c158]">
             <Users className="w-4.5 h-4.5" />
           </div>
-          <div className="text-white font-extrabold text-sm md:text-base font-mono">1,248,563</div>
-          <div className="text-gray-400 text-[9px] font-medium leading-none">مستقبل مستخدم</div>
+          <div className="text-white font-extrabold text-sm md:text-base font-mono tracking-tight">
+            {animatedUsers.toLocaleString('en-US')}
+          </div>
+          <div className="text-gray-400 text-[9px] font-medium leading-none">
+            مستخدم مسجل {platformMetrics.real.users > 0 && <span className="text-[#e5c158] font-mono font-bold">(+{platformMetrics.real.users})</span>}
+          </div>
         </div>
 
-        <div className="bg-[#0c122b]/60 border border-[#c5a059]/10 rounded-xl p-3 text-center space-y-1">
+        {/* Card 2: Searches (12,458,963 + Real Searches) */}
+        <div className={`bg-[#0c122b]/60 border ${pulseCard === 'searches' ? 'border-[#e5c158] shadow-[0_0_15px_rgba(229,193,88,0.25)]' : 'border-[#c5a059]/10'} rounded-xl p-3 text-center space-y-1 transition-all duration-300 relative overflow-hidden group`}>
           <div className="flex justify-center text-[#e5c158]">
             <Search className="w-4.5 h-4.5" />
           </div>
-          <div className="text-white font-extrabold text-sm md:text-base font-mono">12,458,963</div>
-          <div className="text-gray-400 text-[9px] font-medium leading-none">عملية بحث ناجحة</div>
+          <div className="text-white font-extrabold text-sm md:text-base font-mono tracking-tight">
+            {animatedSearches.toLocaleString('en-US')}
+          </div>
+          <div className="text-gray-400 text-[9px] font-medium leading-none">
+            عملية بحث ناجحة {platformMetrics.real.searches > 0 && <span className="text-[#e5c158] font-mono font-bold">(+{platformMetrics.real.searches})</span>}
+          </div>
         </div>
 
-        <div className="bg-[#0c122b]/60 border border-[#c5a059]/10 rounded-xl p-3 text-center space-y-1">
+        {/* Card 3: Database Identities (45,231,789 + Real Contacts) */}
+        <div className={`bg-[#0c122b]/60 border ${pulseCard === 'contacts' ? 'border-[#e5c158] shadow-[0_0_15px_rgba(229,193,88,0.25)]' : 'border-[#c5a059]/10'} rounded-xl p-3 text-center space-y-1 transition-all duration-300 relative overflow-hidden group`}>
           <div className="flex justify-center text-[#e5c158]">
             <Database className="w-4.5 h-4.5" />
           </div>
-          <div className="text-white font-extrabold text-sm md:text-base font-mono">45,231,789</div>
-          <div className="text-gray-400 text-[9px] font-medium leading-none">رقم وهوية يمنية</div>
+          <div className="text-white font-extrabold text-sm md:text-base font-mono tracking-tight">
+            {animatedContacts.toLocaleString('en-US')}
+          </div>
+          <div className="text-gray-400 text-[9px] font-medium leading-none">
+            رقم وهوية يمنية {platformMetrics.real.contacts > 0 && <span className="text-[#e5c158] font-mono font-bold">(+{platformMetrics.real.contacts})</span>}
+          </div>
         </div>
       </div>
 

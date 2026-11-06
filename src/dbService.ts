@@ -18,7 +18,7 @@ import {
   increment,
   getCountFromServer
 } from 'firebase/firestore';
-import { User, Contact, Ad, Transaction, SystemSettings, AnalyticsStats } from './types';
+import { User, Contact, Ad, Transaction, SystemSettings, AnalyticsStats, PlatformMetrics } from './types';
 
 // Load Firebase configuration dynamically from firebase-applet-config.json or use fallback
 let firebaseConfig: any = {
@@ -200,11 +200,13 @@ export class DbService {
 
   public static async saveUser(user: User): Promise<User> {
     await setDoc(doc(db, 'users', user.id), user, { merge: true });
+    this.clearMetricsCache();
     return user;
   }
 
   public static async deleteUser(id: string): Promise<boolean> {
     await deleteDoc(doc(db, 'users', id));
+    this.clearMetricsCache();
     return true;
   }
 
@@ -287,6 +289,7 @@ export class DbService {
       await batch.commit();
     }
 
+    this.clearMetricsCache();
     return addedCount;
   }
 
@@ -297,6 +300,7 @@ export class DbService {
     const searchDocRef = doc(db, 'searchesCount', cleanNumber);
     try {
       await setDoc(searchDocRef, { count: increment(1) }, { merge: true });
+      void this.incrementSearchCounter();
     } catch (e) {
       console.warn('Increment search count failed:', e);
     }
@@ -384,6 +388,7 @@ export class DbService {
     }
 
     console.log(`[DbService] Stateless sync complete for user ${cleanUserPhone}. Processed: ${addedCount}`);
+    this.clearMetricsCache();
     return addedCount;
   }
 
@@ -532,20 +537,133 @@ export class DbService {
     };
   }
 
-  public static async resetAnalytics(): Promise<void> {
-    // 1. Reset all ads views and clicks to 0
-    const adsSnap = await getDocs(collection(db, 'ads'));
+  public static async resetAnalytics(target: 'all' | 'earnings' | 'searches' = 'all'): Promise<{ target: string; message: string }> {
     const batch = writeBatch(db);
-    adsSnap.docs.forEach(docSnap => {
-      batch.update(docSnap.ref, { views: 0, clicks: 0 });
-    });
+    let message = '';
 
-    // 2. Delete all documents in searchesCount collection
-    const searchesSnap = await getDocs(collection(db, 'searchesCount'));
-    searchesSnap.docs.forEach(docSnap => {
-      batch.delete(docSnap.ref);
-    });
+    if (target === 'all' || target === 'earnings') {
+      // 1. Reset all ads views and clicks to 0
+      const adsSnap = await getDocs(collection(db, 'ads'));
+      adsSnap.docs.forEach(docSnap => {
+        batch.update(docSnap.ref, { views: 0, clicks: 0 });
+      });
+      message = 'تم تصفير أرباح ومشاهدات ونقرات الإعلانات بالكامل بنجاح!';
+    }
+
+    if (target === 'all' || target === 'searches') {
+      // 2. Delete all documents in searchesCount collection
+      const searchesSnap = await getDocs(collection(db, 'searchesCount'));
+      searchesSnap.docs.forEach(docSnap => {
+        batch.delete(docSnap.ref);
+      });
+
+      // 3. Reset platform searches counter
+      const platformStatsRef = doc(db, 'metrics', 'platform_stats');
+      batch.set(platformStatsRef, { searches: 0, resetAt: new Date().toISOString() }, { merge: true });
+
+      message = target === 'all'
+        ? 'تم تصفير جميع الإحصائيات (أرباح الإعلانات + عمليات البحث) بنجاح!'
+        : 'تم تصفير جميع سجلات وعمليات البحث بنجاح!';
+    }
 
     await batch.commit();
+    this.clearMetricsCache();
+    return { target, message };
+  }
+
+  // --- Dynamic Platform Real-Time Metrics (Base + Real Firestore Data) ---
+  private static metricsCache: { data: PlatformMetrics; timestamp: number } | null = null;
+
+  public static clearMetricsCache(): void {
+    this.metricsCache = null;
+  }
+
+  public static async incrementSearchCounter(): Promise<void> {
+    try {
+      const metricDocRef = doc(db, 'metrics', 'platform_stats');
+      await setDoc(metricDocRef, {
+        searches: increment(1),
+        lastSearchAt: new Date().toISOString()
+      }, { merge: true });
+
+      if (this.metricsCache) {
+        this.metricsCache.data.real.searches += 1;
+        this.metricsCache.data.total.searches += 1;
+      }
+    } catch (err) {
+      console.warn('[DbService] Error incrementing platform search counter:', err);
+    }
+  }
+
+  public static async getPlatformMetrics(): Promise<PlatformMetrics> {
+    const now = Date.now();
+    // Cache for 2.5 seconds for instant response and efficient reads
+    if (this.metricsCache && (now - this.metricsCache.timestamp) < 2500) {
+      return this.metricsCache.data;
+    }
+
+    // Fixed Baseline Constants requested by user
+    const BASE_USERS = 1248563;
+    const BASE_SEARCHES = 12458963;
+    const BASE_CONTACTS = 45231789;
+
+    let realUsers = 0;
+    let realContacts = 0;
+    let realSearches = 0;
+
+    // 1. Real Registered Users Count in Firestore
+    try {
+      const usersCountSnap = await getCountFromServer(collection(db, 'users'));
+      realUsers = usersCountSnap.data().count;
+    } catch (err) {
+      console.warn('[DbService] Error counting users:', err);
+    }
+
+    // 2. Real Contacts / Caller IDs Count in Firestore
+    try {
+      const contactsCountSnap = await getCountFromServer(collection(db, 'contacts'));
+      realContacts = contactsCountSnap.data().count;
+    } catch (err) {
+      console.warn('[DbService] Error counting contacts:', err);
+    }
+
+    // 3. Real Search operations count in Firestore
+    try {
+      const metricDoc = await getDoc(doc(db, 'metrics', 'platform_stats'));
+      if (metricDoc.exists()) {
+        realSearches = metricDoc.data().searches || 0;
+      } else {
+        const searchesCountSnap = await getCountFromServer(collection(db, 'searchesCount'));
+        realSearches = searchesCountSnap.data().count;
+        await setDoc(doc(db, 'metrics', 'platform_stats'), { 
+          searches: realSearches,
+          createdAt: new Date().toISOString()
+        }, { merge: true });
+      }
+    } catch (err) {
+      console.warn('[DbService] Error fetching platform search metrics:', err);
+    }
+
+    const metrics: PlatformMetrics = {
+      base: {
+        users: BASE_USERS,
+        searches: BASE_SEARCHES,
+        contacts: BASE_CONTACTS
+      },
+      real: {
+        users: realUsers,
+        searches: realSearches,
+        contacts: realContacts
+      },
+      total: {
+        users: BASE_USERS + realUsers,
+        searches: BASE_SEARCHES + realSearches,
+        contacts: BASE_CONTACTS + realContacts
+      }
+    };
+
+    this.metricsCache = { data: metrics, timestamp: now };
+    return metrics;
   }
 }
+

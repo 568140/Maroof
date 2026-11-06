@@ -55,6 +55,7 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [adminInput, setAdminInput] = useState('');
   const [homeSyncing, setHomeSyncing] = useState(false);
+  const [syncedInSession, setSyncedInSession] = useState(false);
 
   // Toast Dispatcher Helper
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'success') => {
@@ -133,6 +134,7 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem('maarouf_phone_session');
     setCurrentUser(null);
+    setSyncedInSession(false);
     setTransactions([]);
     showToast('تم تسجيل الخروج بنجاح.', 'info');
     setActiveTab('search');
@@ -163,7 +165,9 @@ export default function App() {
 
     // Update profile
     setCurrentUser(data.user);
+    setSyncedInSession(true);
     fetchUserTransactions(data.user.phone);
+    window.dispatchEvent(new CustomEvent('maarouf:metrics-updated'));
     return data;
   };
 
@@ -340,18 +344,18 @@ export default function App() {
             {/* SEARCH TAB */}
             {activeTab === 'search' && (
               <>
-                {currentUser && (
-                  <div className="max-w-xl mx-auto mb-5">
+                {currentUser && !syncedInSession && (
+                  <div className="max-w-xs mx-auto mb-4 text-center">
                     <button
                       type="button"
                       onClick={handleHomeContactsSync}
                       disabled={homeSyncing}
-                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#e5c158] to-[#c5a059] text-black font-extrabold text-sm shadow-lg shadow-[#c5a059]/10 flex items-center justify-center gap-2 disabled:opacity-60"
+                      className="w-full py-2 px-3.5 rounded-lg bg-gradient-to-r from-[#e5c158] to-[#c5a059] hover:from-[#f3e5ab] hover:to-[#e5c158] text-black font-extrabold text-xs shadow-md shadow-[#c5a059]/15 flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 active:scale-95"
                     >
-                      <Smartphone className="w-5 h-5" />
+                      <Smartphone className="w-4 h-4 shrink-0" />
                       <span>{homeSyncing ? 'جارٍ مزامنة جهات الاتصال...' : 'مزامنة جهات الاتصال الآن'}</span>
                     </button>
-                    <p className="text-gray-500 text-[11px] text-center mt-2">زر واحد لجلب جهات اتصال الهاتف ومزامنتها تلقائياً</p>
+                    <p className="text-gray-500 text-[10px] text-center mt-1.5">زر واحد لجلب جهات اتصال الهاتف ومزامنتها تلقائياً</p>
                   </div>
                 )}
                 <SearchSection
@@ -535,8 +539,10 @@ export default function App() {
         onRegisterSuccess={(user) => {
           setCurrentUser(user);
           localStorage.setItem('maarouf_phone_session', user.phone);
+          setSyncedInSession(false);
           fetchUserTransactions(user.phone);
           showToast(`مرحباً بك! تم تسجيل الدخول بنجاح للرقم ${user.phone}`, 'success');
+          window.dispatchEvent(new CustomEvent('maarouf:metrics-updated'));
           void syncContactsAfterLogin(user);
         }}
         showToast={showToast}

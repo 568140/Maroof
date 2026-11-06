@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldCheck, Users, Database, Eye, TrendingUp, DollarSign, Settings, Search, Trash2, 
-  UserX, UserCheck, Plus, Upload, Check, ToggleLeft, ToggleRight, Sparkles, RefreshCw, AlertTriangle, ShieldAlert, Edit3
+  UserX, UserCheck, Plus, Upload, Check, ToggleLeft, ToggleRight, Sparkles, RefreshCw, AlertTriangle, ShieldAlert, Edit3, X,
+  Download, FileSpreadsheet, Copy, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { User, Contact, Ad, SystemSettings, AnalyticsStats } from '../types';
 
@@ -28,8 +29,17 @@ export default function AdminDashboard({
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'database' | 'ads' | 'security' | 'parameters'>('overview');
   
+  // Selective Reset modal states
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [resetTarget, setResetTarget] = useState<'all' | 'earnings' | 'searches'>('earnings');
+  const [resetting, setResetting] = useState(false);
+  
   // Database sub-states
   const [dbSearch, setDbSearch] = useState('');
+  const [dbPage, setDbPage] = useState(1);
+  const [dbPageSize, setDbPageSize] = useState<number>(25);
+  const [dbLoading, setDbLoading] = useState(false);
+  const [copiedContactPhone, setCopiedContactPhone] = useState<string | null>(null);
   const [newContactPhone, setNewContactPhone] = useState('');
   const [newContactName, setNewContactName] = useState('');
   const [bulkCsvText, setBulkCsvText] = useState('');
@@ -121,33 +131,37 @@ export default function AdminDashboard({
     }
   }, [activeTab, adminToken]);
 
-  // Handle Reset Stats & Earnings to Zero
-  const handleResetStats = async () => {
-    if (!window.confirm('هل أنت متأكد من رغبتك في تصفير جميع الإحصائيات وسجلات البحث وأرباح الإعلانات بالكامل؟ لا يمكن التراجع عن هذا الإجراء.')) {
-      return;
-    }
+  // Open Selective Reset Modal
+  const handleOpenResetModal = () => {
+    setResetModalOpen(true);
+  };
 
+  // Execute Selective Reset in Firestore
+  const handleExecuteReset = async () => {
     try {
-      setLoading(true);
+      setResetting(true);
       const res = await fetch('/api/admin/reset-stats', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-admin-token': adminToken
-        }
+        },
+        body: JSON.stringify({ target: resetTarget })
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'فشل إعادة ضبط الإحصائيات.');
+        throw new Error(data.error || 'فشل تصفير البيانات.');
       }
 
       showToast(data.message, 'success');
+      setResetModalOpen(false);
       await fetchAdminData();
+      window.dispatchEvent(new CustomEvent('maarouf:metrics-updated'));
     } catch (err: any) {
-      showToast(err.message || 'حدث خطأ أثناء تصفير الإحصائيات.', 'error');
+      showToast(err.message || 'حدث خطأ أثناء تصفير البيانات.', 'error');
     } finally {
-      setLoading(false);
+      setResetting(false);
     }
   };
 
@@ -350,6 +364,102 @@ export default function AdminDashboard({
     }
   };
 
+  // Database Full Fetch: Dedicated handler to reload real complete database from Firestore
+  const fetchFullDatabase = async () => {
+    if (!adminToken) return;
+    setDbLoading(true);
+    try {
+      const res = await fetch('/api/admin/contacts', {
+        headers: { 'x-admin-token': adminToken }
+      });
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setContacts(data);
+        setDbPage(1);
+        showToast(`تم جلب قاعدة البيانات الحقيقية بالكامل (${data.length} جهة اتصال مسجلة)`, 'success');
+      } else if (data && data.error) {
+        showToast(data.error, 'error');
+      }
+    } catch (err) {
+      showToast('خطأ أثناء جلب قاعدة البيانات الحقيقية.', 'error');
+    } finally {
+      setDbLoading(false);
+    }
+  };
+
+  // Database Export: CSV with UTF-8 BOM for perfect Excel Arabic display
+  const handleExportCSV = () => {
+    if (!contacts || contacts.length === 0) {
+      showToast('لا توجد بيانات متاحة للتصدير حالياً.', 'warning');
+      return;
+    }
+    try {
+      const headers = ['المعرف', 'رقم الهاتف', 'الاسم المعتمد', 'عدد مرات التكرار/الثقة', 'أضيف بواسطة', 'تاريخ الإضافة'];
+      const rows = contacts.map(c => [
+        `"${(c.id || '').replace(/"/g, '""')}"`,
+        `"${(c.phoneNumber || '').replace(/"/g, '""')}"`,
+        `"${(c.contactName || '').replace(/"/g, '""')}"`,
+        `"${c.frequency || 1}"`,
+        `"${(c.addedByUser || '').replace(/"/g, '""')}"`,
+        `"${(c.createdAt || '').replace(/"/g, '""')}"`
+      ]);
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const dateStr = new Date().toISOString().split('T')[0];
+      link.setAttribute('href', url);
+      link.setAttribute('download', `maarouf_database_contacts_${dateStr}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      showToast(`تم تصدير قاعدة البيانات بنجاح (${contacts.length} جهة اتصال) بصيغة CSV`, 'success');
+    } catch (err) {
+      showToast('حدث خطأ أثناء تصدير ملف CSV.', 'error');
+    }
+  };
+
+  // Database Export: JSON
+  const handleExportJSON = () => {
+    if (!contacts || contacts.length === 0) {
+      showToast('لا توجد بيانات متاحة للتصدير حالياً.', 'warning');
+      return;
+    }
+    try {
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        totalRecords: contacts.length,
+        contacts: contacts
+      };
+      const jsonContent = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const dateStr = new Date().toISOString().split('T')[0];
+      link.setAttribute('href', url);
+      link.setAttribute('download', `maarouf_database_contacts_${dateStr}.json`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      showToast(`تم تصدير قاعدة البيانات كملف JSON (${contacts.length} جهة اتصال)`, 'success');
+    } catch (err) {
+      showToast('حدث خطأ أثناء تصدير ملف JSON.', 'error');
+    }
+  };
+
+  // Copy phone helper
+  const handleCopyContactPhone = (phone: string) => {
+    navigator.clipboard.writeText(phone);
+    setCopiedContactPhone(phone);
+    setTimeout(() => setCopiedContactPhone(null), 2000);
+    showToast(`تم نسخ الرقم ${phone}`, 'info');
+  };
+
   // Ads CRUD: Create Ad
   const handleCreateAd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -472,7 +582,12 @@ export default function AdminDashboard({
         ].map((tab) => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key as any)}
+            onClick={() => {
+              setActiveTab(tab.key as any);
+              if (tab.key === 'database') {
+                fetchFullDatabase();
+              }
+            }}
             className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === tab.key ? 'bg-gradient-to-r from-[#e5c158] to-[#c5a059] text-black shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
           >
             {tab.label}
@@ -529,10 +644,11 @@ export default function AdminDashboard({
                   <p className="text-[10px] text-gray-400 mt-1">تتيح لك هذه الميزة تصفير جميع إحصائيات الإعلانات (المشاهدات والنقرات) وسجلات نشاط البحث لتظهر الأرباح والإحصائيات الحقيقية بنسبة 100%.</p>
                 </div>
                 <button
-                  onClick={handleResetStats}
-                  className="px-4 py-2 bg-red-950/40 hover:bg-red-900/40 text-red-400 border border-red-950/60 text-xs font-bold rounded-lg transition-all whitespace-nowrap"
+                  onClick={handleOpenResetModal}
+                  className="px-4 py-2 bg-red-950/40 hover:bg-red-900/40 text-red-400 border border-red-950/60 text-xs font-bold rounded-lg transition-all whitespace-nowrap active:scale-95 flex items-center gap-1.5"
                 >
-                  تصفير إحصائيات الأرباح والبحث
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>تصفير إحصائيات الأرباح والبحث</span>
                 </button>
               </div>
 
@@ -687,171 +803,383 @@ export default function AdminDashboard({
           )}
 
           {/* TAB 3: DATABASE CRUD MANAGER */}
-          {activeTab === 'database' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              
-              {/* Add manual Caller ID row / Edit contact form */}
-              <div className="bg-[#0c122b]/80 border border-white/5 rounded-2xl p-5 space-y-4">
-                {editingContactId ? (
-                  <>
-                    <div className="flex justify-between items-center pb-2 border-b border-white/10 mb-1">
-                      <button onClick={() => setEditingContactId(null)} className="text-xs text-red-400 hover:underline">إلغاء التعديل</button>
-                      <h3 className="text-white text-sm font-bold flex items-center gap-1.5">
-                        <span>تعديل بيانات الرقم</span>
-                        <Edit3 className="w-4 h-4 text-[#e5c158]" />
-                      </h3>
+          {activeTab === 'database' && (() => {
+            const filteredContacts = (contacts || []).filter(c => {
+              if (!dbSearch.trim()) return true;
+              const q = dbSearch.trim().toLowerCase();
+              return (c.phoneNumber && c.phoneNumber.toLowerCase().includes(q)) || 
+                     (c.contactName && c.contactName.toLowerCase().includes(q)) ||
+                     (c.addedByUser && c.addedByUser.toLowerCase().includes(q));
+            });
+
+            const totalFiltered = filteredContacts.length;
+            const pageSizeNum = dbPageSize === -1 ? (totalFiltered || 1) : dbPageSize;
+            const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSizeNum));
+            const currentPage = Math.min(dbPage, totalPages);
+            const startIndex = (currentPage - 1) * pageSizeNum;
+            const paginatedContacts = dbPageSize === -1 ? filteredContacts : filteredContacts.slice(startIndex, startIndex + pageSizeNum);
+
+            return (
+              <div className="space-y-6">
+                
+                {/* Database Top Bar: Actions & Live Counts */}
+                <div className="bg-[#0c122b]/90 border border-[#c5a059]/20 rounded-2xl p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Database className="w-5 h-5 text-[#e5c158]" />
+                      <h3 className="text-white text-base md:text-lg font-bold">قاعدة بيانات الهويات والأرقام الحقيقية</h3>
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-[#e5c158]/10 text-[#e5c158] border border-[#e5c158]/30">
+                        {contacts.length.toLocaleString('ar-EG')} جهة اتصال
+                      </span>
                     </div>
+                    <p className="text-gray-400 text-xs">
+                      مزامنة مباشرة مع Firestore. تصفح كامل الأرقام، البحث اللحظي، والتصدير بضغطة زر.
+                    </p>
+                  </div>
 
-                    <form onSubmit={handleEditContactSave} className="space-y-3.5">
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400">الرقم المعدل (9 أرقام)</label>
-                        <input
-                          type="text"
-                          value={editingPhone}
-                          onChange={(e) => setEditingPhone(e.target.value.replace(/[^\d]/g, '').substring(0, 9))}
-                          placeholder="771234567"
-                          className="w-full p-2.5 text-xs bg-black/40 border border-[#c5a059]/20 focus:border-[#e5c158] rounded-lg text-white"
-                        />
-                      </div>
+                  {/* Actions: Refresh & Export CSV / JSON */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={fetchFullDatabase}
+                      disabled={dbLoading}
+                      className="px-3.5 py-2 bg-white/5 hover:bg-white/10 text-white text-xs font-bold rounded-lg border border-white/10 flex items-center gap-1.5 transition-all disabled:opacity-50"
+                      title="إعادة جلب قاعدة البيانات من الخادم"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 text-[#e5c158] ${dbLoading ? 'animate-spin' : ''}`} />
+                      <span>{dbLoading ? 'جاري الجلب...' : 'تحديث القاعدة بالكامل'}</span>
+                    </button>
 
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400">الاسم الجديد للهوية</label>
-                        <input
-                          type="text"
-                          value={editingName}
-                          onChange={(e) => setEditingName(e.target.value)}
-                          placeholder="مكتب التجهيزات والمقاولات"
-                          className="w-full p-2.5 text-xs bg-black/40 border border-[#c5a059]/20 focus:border-[#e5c158] rounded-lg text-white"
-                        />
-                      </div>
+                    <button
+                      onClick={handleExportCSV}
+                      disabled={!contacts.length}
+                      className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-green-600 hover:brightness-110 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 shadow-md transition-all disabled:opacity-50"
+                      title="تصدير كجدول إكسل متوافق مع اللغة العربية"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>تصدير CSV (Excel)</span>
+                    </button>
 
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400">تكرار الاسم / ثقة الهوية</label>
-                        <input
-                          type="number"
-                          value={editingFrequency}
-                          onChange={(e) => setEditingFrequency(Number(e.target.value) || 1)}
-                          className="w-full p-2.5 text-xs bg-black/40 border border-white/10 rounded-lg text-white font-mono"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="w-full py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold text-xs rounded-lg hover:brightness-110 transition-all"
-                      >
-                        حفظ وتحديث التغييرات
-                      </button>
-                    </form>
-                  </>
-                ) : (
-                  <>
-                    <h3 className="text-white text-sm font-bold">تسجيل هوية رقم يدوياً</h3>
-                    
-                    <form onSubmit={handleAddContact} className="space-y-3.5">
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400">رقم الهاتف اليمني (9 أرقام)</label>
-                        <input
-                          type="text"
-                          value={newContactPhone}
-                          onChange={(e) => setNewContactPhone(e.target.value.replace(/[^\d]/g, '').substring(0, 9))}
-                          placeholder="771234567"
-                          className="w-full p-2.5 text-xs bg-black/40 border border-white/10 rounded-lg text-white"
-                        />
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-400">الاسم المعتمد للهوية</label>
-                        <input
-                          type="text"
-                          value={newContactName}
-                          onChange={(e) => setNewContactName(e.target.value)}
-                          placeholder="مكتب التجهيزات والمقاولات"
-                          className="w-full p-2.5 text-xs bg-black/40 border border-white/10 rounded-lg text-white"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="w-full py-2 bg-gradient-to-r from-[#e5c158] to-[#c5a059] text-black font-bold text-xs rounded-lg hover:brightness-110 transition-all"
-                      >
-                        حفظ السجل الجديد
-                      </button>
-                    </form>
-                  </>
-                )}
-              </div>
-
-              {/* CSV Bulk Importer */}
-              <div className="bg-[#0c122b]/80 border border-white/5 rounded-2xl p-5 space-y-3">
-                <h3 className="text-white text-sm font-bold flex items-center justify-between">
-                  <Upload className="w-4 h-4 text-[#e5c158]" />
-                  <span>استيراد جماعي CSV (رفع سريع)</span>
-                </h3>
-                <p className="text-gray-400 text-[10px]">ألصق السطور بتنسيق (الرقم, الاسم) لرفع آلاف جهات الاتصال مرة واحدة.</p>
-                <textarea
-                  value={bulkCsvText}
-                  onChange={(e) => setBulkCsvText(e.target.value)}
-                  placeholder="771122334,مستشار القضاء بصنعاء&#10;733445566,شركة التميز للتطوير"
-                  rows={4}
-                  className="w-full p-2.5 text-[11px] font-mono bg-black/40 border border-white/10 rounded-lg text-white"
-                />
-                <button
-                  onClick={handleBulkImport}
-                  className="w-full py-2 bg-white/5 hover:bg-white/10 text-white text-xs font-bold border border-white/10 rounded-lg transition-all"
-                >
-                  بدء الاستيراد والمعالجة الفورية
-                </button>
-              </div>
-
-              {/* View/Delete Database records */}
-              <div className="bg-[#0c122b]/80 border border-white/5 rounded-2xl p-5 space-y-3">
-                <div className="space-y-1.5">
-                  <h3 className="text-white text-sm font-bold">دليل الهويات النشطة في قاعدة معروف</h3>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={dbSearch}
-                      onChange={(e) => setDbSearch(e.target.value)}
-                      placeholder="البحث بالرقم أو الاسم في الجدول..."
-                      className="w-full py-2 pl-3 pr-8 text-xs bg-black/40 border border-white/10 rounded-lg text-white"
-                    />
-                    <Search className="w-3.5 h-3.5 text-gray-500 absolute right-2.5 top-1/2 -translate-y-1/2" />
+                    <button
+                      onClick={handleExportJSON}
+                      disabled={!contacts.length}
+                      className="px-3.5 py-2 bg-[#1a233b] hover:bg-[#232f4e] text-white text-xs font-bold rounded-lg border border-white/10 flex items-center gap-1.5 transition-all disabled:opacity-50"
+                      title="تصدير كملف JSON لنسخ احتياطي برمجي"
+                    >
+                      <Download className="w-3.5 h-3.5 text-[#e5c158]" />
+                      <span>تصدير JSON</span>
+                    </button>
                   </div>
                 </div>
 
-                <div className="max-h-60 overflow-y-auto space-y-1.5 divide-y divide-white/5">
-                  {(contacts || [])
-                    .filter(c => c && ((c.phoneNumber && c.phoneNumber.includes(dbSearch)) || (c.contactName && c.contactName.includes(dbSearch))))
-                    .slice(0, 50)
-                    .map((c) => (
-                      <div key={c.id} className="pt-2 text-xs flex items-center justify-between">
-                        <div className="flex items-center gap-1" dir="ltr">
-                          <button
-                            onClick={() => handleDeleteContact(c.id)}
-                            className="p-1 text-red-400 hover:text-red-300"
-                            title="حذف الهوية"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
+                {/* Sub-tools Grid: Manual Entry & Bulk CSV Import */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Manual Caller ID / Edit */}
+                  <div className="bg-[#0c122b]/70 border border-white/5 rounded-2xl p-4 space-y-3">
+                    {editingContactId ? (
+                      <>
+                        <div className="flex justify-between items-center pb-2 border-b border-white/10">
+                          <button onClick={() => setEditingContactId(null)} className="text-xs text-red-400 hover:underline">
+                            إلغاء التعديل
                           </button>
+                          <h4 className="text-white text-xs font-bold flex items-center gap-1.5">
+                            <span>تعديل هوية الرقم</span>
+                            <Edit3 className="w-3.5 h-3.5 text-[#e5c158]" />
+                          </h4>
+                        </div>
+                        <form onSubmit={handleEditContactSave} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <input
+                            type="text"
+                            value={editingPhone}
+                            onChange={(e) => setEditingPhone(e.target.value.replace(/[^\d]/g, '').substring(0, 9))}
+                            placeholder="771234567"
+                            className="p-2 text-xs bg-black/40 border border-[#c5a059]/30 rounded-lg text-white font-mono"
+                          />
+                          <input
+                            type="text"
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            placeholder="الاسم المعتمد"
+                            className="p-2 text-xs bg-black/40 border border-[#c5a059]/30 rounded-lg text-white"
+                          />
                           <button
-                            onClick={() => handleEditContactClick(c)}
-                            className="p-1 text-[#e5c158] hover:text-[#fff]"
-                            title="تعديل الهوية"
+                            type="submit"
+                            className="py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold text-xs rounded-lg hover:brightness-110 transition-all"
                           >
-                            <Edit3 className="w-3.5 h-3.5" />
+                            حفظ التعديل
                           </button>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-white font-bold block">{c.contactName}</span>
-                          <span className="text-gray-500 font-mono text-[10px]">{c.phoneNumber}</span>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
+                        </form>
+                      </>
+                    ) : (
+                      <>
+                        <h4 className="text-white text-xs font-bold flex items-center gap-1.5">
+                          <Plus className="w-3.5 h-3.5 text-[#e5c158]" />
+                          <span>تسجيل هوية رقم جديدة يدوياً</span>
+                        </h4>
+                        <form onSubmit={handleAddContact} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <input
+                            type="text"
+                            value={newContactPhone}
+                            onChange={(e) => setNewContactPhone(e.target.value.replace(/[^\d]/g, '').substring(0, 9))}
+                            placeholder="الرقم (مثال 771234567)"
+                            className="p-2 text-xs bg-black/40 border border-white/10 rounded-lg text-white font-mono"
+                          />
+                          <input
+                            type="text"
+                            value={newContactName}
+                            onChange={(e) => setNewContactName(e.target.value)}
+                            placeholder="الاسم المعتمد للهوية"
+                            className="p-2 text-xs bg-black/40 border border-white/10 rounded-lg text-white"
+                          />
+                          <button
+                            type="submit"
+                            className="py-2 bg-gradient-to-r from-[#e5c158] to-[#c5a059] text-black font-bold text-xs rounded-lg hover:brightness-110 transition-all"
+                          >
+                            إضافة إلى القاعدة
+                          </button>
+                        </form>
+                      </>
+                    )}
+                  </div>
 
-            </div>
-          )}
+                  {/* Bulk CSV Upload */}
+                  <div className="bg-[#0c122b]/70 border border-white/5 rounded-2xl p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-white text-xs font-bold flex items-center gap-1.5">
+                        <Upload className="w-3.5 h-3.5 text-[#e5c158]" />
+                        <span>استيراد جماعي فوري (CSV)</span>
+                      </h4>
+                      <span className="text-[10px] text-gray-500">التنسيق: الرقم,الاسم</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={bulkCsvText}
+                        onChange={(e) => setBulkCsvText(e.target.value)}
+                        placeholder="771122334,مكتب القضاء / 733445566,شركة التميز"
+                        className="flex-1 p-2 text-xs font-mono bg-black/40 border border-white/10 rounded-lg text-white"
+                      />
+                      <button
+                        onClick={handleBulkImport}
+                        className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white text-xs font-bold border border-white/10 rounded-lg whitespace-nowrap transition-all"
+                      >
+                        معالجة ورفع
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Main Full-Database Browser & Table */}
+                <div className="bg-[#0c122b]/80 border border-white/5 rounded-2xl p-5 space-y-4">
+                  {/* Search bar & Page-size selector */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="relative w-full sm:w-80">
+                      <input
+                        type="text"
+                        value={dbSearch}
+                        onChange={(e) => {
+                          setDbSearch(e.target.value);
+                          setDbPage(1);
+                        }}
+                        placeholder="ابحث بالرقم أو بالاسم أو بمصدر الإضافة..."
+                        className="w-full py-2.5 pl-3 pr-9 text-xs bg-black/50 border border-white/10 focus:border-[#e5c158] rounded-xl text-white outline-none"
+                      />
+                      <Search className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                      {dbSearch && (
+                        <button
+                          onClick={() => {
+                            setDbSearch('');
+                            setDbPage(1);
+                          }}
+                          className="text-gray-400 hover:text-white absolute left-2.5 top-1/2 -translate-y-1/2 text-xs"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end text-xs">
+                      <div className="text-gray-400 text-xs">
+                        عرض: <span className="text-white font-mono font-bold">{paginatedContacts.length}</span> من أصل{' '}
+                        <span className="text-[#e5c158] font-mono font-bold">{totalFiltered.toLocaleString('ar-EG')}</span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-gray-400 text-[11px]">في الصفحة:</span>
+                        <select
+                          value={dbPageSize}
+                          onChange={(e) => {
+                            setDbPageSize(Number(e.target.value));
+                            setDbPage(1);
+                          }}
+                          className="bg-black/60 border border-white/10 text-white text-xs rounded-lg px-2 py-1 outline-none"
+                        >
+                          <option value={25}>25</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                          <option value={-1}>عرض الكل</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Contacts Table */}
+                  <div className="overflow-x-auto rounded-xl border border-white/5">
+                    <table className="w-full text-right text-xs">
+                      <thead className="bg-black/50 text-gray-400 font-bold border-b border-white/5">
+                        <tr>
+                          <th className="p-3">#</th>
+                          <th className="p-3">رقم الهاتف</th>
+                          <th className="p-3">الاسم المعتمد للهوية</th>
+                          <th className="p-3 text-center">مرات التكرار / الثقة</th>
+                          <th className="p-3">المصدر / أضيف بواسطة</th>
+                          <th className="p-3">تاريخ الإضافة</th>
+                          <th className="p-3 text-center">إجراءات</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {paginatedContacts.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="p-8 text-center text-gray-500">
+                              {contacts.length === 0 ? 'قاعدة البيانات فارغة أو جاري تحميلها...' : 'لا توجد نتائج مطابقة لبحثك.'}
+                            </td>
+                          </tr>
+                        ) : (
+                          paginatedContacts.map((c, index) => {
+                            const rowNumber = startIndex + index + 1;
+                            return (
+                              <tr key={c.id || index} className="hover:bg-white/[0.02] transition-colors">
+                                <td className="p-3 text-gray-500 font-mono text-[11px]">{rowNumber}</td>
+                                
+                                {/* Phone Number with Quick Copy */}
+                                <td className="p-3">
+                                  <div className="flex items-center gap-1.5 font-mono font-bold text-white" dir="ltr">
+                                    <span>{c.phoneNumber}</span>
+                                    <button
+                                      onClick={() => handleCopyContactPhone(c.phoneNumber)}
+                                      className="p-1 rounded text-gray-500 hover:text-white hover:bg-white/5 transition-all"
+                                      title="نسخ رقم الهاتف"
+                                    >
+                                      {copiedContactPhone === c.phoneNumber ? (
+                                        <Check className="w-3.5 h-3.5 text-green-400" />
+                                      ) : (
+                                        <Copy className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
+                                  </div>
+                                </td>
+
+                                {/* Name */}
+                                <td className="p-3">
+                                  <span className="text-white font-medium">{c.contactName}</span>
+                                </td>
+
+                                {/* Frequency / Trust */}
+                                <td className="p-3 text-center">
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+                                    (c.frequency || 1) > 2 ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-white/5 text-gray-400'
+                                  }`}>
+                                    {c.frequency || 1}x
+                                  </span>
+                                </td>
+
+                                {/* Added by user */}
+                                <td className="p-3 text-gray-400 text-[11px] font-mono">
+                                  {c.addedByUser ? c.addedByUser : 'مزامنة عامة'}
+                                </td>
+
+                                {/* Created At */}
+                                <td className="p-3 text-gray-500 text-[11px] font-mono">
+                                  {c.createdAt ? c.createdAt.split('T')[0] : 'سابق'}
+                                </td>
+
+                                {/* Actions: Edit / Delete */}
+                                <td className="p-3 text-center">
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button
+                                      onClick={() => handleEditContactClick(c)}
+                                      className="p-1.5 rounded-lg text-gray-400 hover:text-[#e5c158] hover:bg-white/5 transition-all"
+                                      title="تعديل هذا السجل"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteContact(c.id)}
+                                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                                      title="حذف هذا السجل نهائياً"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination Controls */}
+                  {dbPageSize !== -1 && totalPages > 1 && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-white/5">
+                      <div className="text-gray-400 text-xs">
+                        الصفحة <span className="text-white font-mono font-bold">{currentPage}</span> من{' '}
+                        <span className="text-white font-mono font-bold">{totalPages}</span> (إجمالي{' '}
+                        <span className="text-[#e5c158] font-mono font-bold">{totalFiltered}</span> سجل)
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setDbPage(p => Math.max(1, p - 1))}
+                          disabled={currentPage === 1}
+                          className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-40 text-white text-xs font-bold rounded-lg border border-white/5 flex items-center gap-1 transition-all"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                          <span>السابق</span>
+                        </button>
+
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            let pageNum = i + 1;
+                            if (totalPages > 5) {
+                              if (currentPage > 3 && currentPage < totalPages - 2) {
+                                pageNum = currentPage - 2 + i;
+                              } else if (currentPage >= totalPages - 2) {
+                                pageNum = totalPages - 4 + i;
+                              }
+                            }
+                            return (
+                              <button
+                                key={pageNum}
+                                onClick={() => setDbPage(pageNum)}
+                                className={`w-8 h-8 rounded-lg text-xs font-mono font-bold transition-all ${
+                                  currentPage === pageNum
+                                    ? 'bg-gradient-to-r from-[#e5c158] to-[#c5a059] text-black shadow-md'
+                                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                                }`}
+                              >
+                                {pageNum}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <button
+                          onClick={() => setDbPage(p => Math.min(totalPages, p + 1))}
+                          disabled={currentPage === totalPages}
+                          className="px-3 py-1.5 bg-white/5 hover:bg-white/10 disabled:opacity-40 text-white text-xs font-bold rounded-lg border border-white/5 flex items-center gap-1 transition-all"
+                        >
+                          <span>التالي</span>
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            );
+          })()}
 
           {/* TAB 4: ADVERTISEMENT SCHEDULER */}
           {activeTab === 'ads' && (
@@ -1222,6 +1550,174 @@ export default function AdminDashboard({
 
         </div>
       )}
+
+      {/* SELECTIVE RESET MODAL OVERLAY */}
+      <AnimatePresence>
+        {resetModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" dir="rtl">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-red-500/20 bg-[#0c122b] p-6 text-right shadow-[0_20px_60px_rgba(0,0,0,0.9)] space-y-5"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-white/5">
+                <button
+                  type="button"
+                  onClick={() => !resetting && setResetModalOpen(false)}
+                  className="text-gray-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-white text-base font-black">إعادة ضبط وتصفير البيانات</h3>
+                  <div className="w-8 h-8 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400">
+                    <AlertTriangle className="w-4 h-4" />
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-gray-300 text-xs leading-relaxed">
+                حدد البيانات التي ترغب في تصفيرها وإعادتها لنقطة الصفر في قاعدة بيانات Firestore الحقيقية:
+              </p>
+
+              {/* Options selection */}
+              <div className="space-y-3">
+                {/* Option 1: Earnings Only */}
+                <div
+                  onClick={() => setResetTarget('earnings')}
+                  className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${
+                    resetTarget === 'earnings'
+                      ? 'bg-amber-500/10 border-[#e5c158] shadow-[0_0_15px_rgba(229,193,88,0.15)]'
+                      : 'bg-black/30 border-white/5 hover:border-white/10'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="resetTarget"
+                    checked={resetTarget === 'earnings'}
+                    onChange={() => setResetTarget('earnings')}
+                    className="mt-1 accent-[#e5c158]"
+                  />
+                  <div className="flex-1 space-y-1 text-right">
+                    <div className="flex items-center justify-between">
+                      <span className="text-white text-xs font-bold flex items-center gap-1.5">
+                        <DollarSign className="w-3.5 h-3.5 text-[#e5c158]" />
+                        <span>تصفير أرباح وإحصائيات الإعلانات فقط</span>
+                      </span>
+                      <span className="text-[10px] text-gray-400 font-mono">${stats?.totalEarnings || '0.00'} ➔ $0.00</span>
+                    </div>
+                    <p className="text-gray-400 text-[10px] leading-normal">
+                      يقوم بتصفير جميع مشاهدات ونقرات الإعلانات وإعادة الأرباح المحتسبة بالكامل إلى $0.00 دون المساس بسجلات البحث.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Option 2: Searches Only */}
+                <div
+                  onClick={() => setResetTarget('searches')}
+                  className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${
+                    resetTarget === 'searches'
+                      ? 'bg-blue-500/10 border-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.15)]'
+                      : 'bg-black/30 border-white/5 hover:border-white/10'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="resetTarget"
+                    checked={resetTarget === 'searches'}
+                    onChange={() => setResetTarget('searches')}
+                    className="mt-1 accent-blue-400"
+                  />
+                  <div className="flex-1 space-y-1 text-right">
+                    <div className="flex items-center justify-between">
+                      <span className="text-white text-xs font-bold flex items-center gap-1.5">
+                        <Search className="w-3.5 h-3.5 text-blue-400" />
+                        <span>تصفير عمليات وسجلات البحث فقط</span>
+                      </span>
+                      <span className="text-[10px] text-gray-400 font-mono">{stats?.totalSearches || 0} ➔ 0</span>
+                    </div>
+                    <p className="text-gray-400 text-[10px] leading-normal">
+                      يقوم بحذف سجلات البحث وتصفير عداد عمليات البحث التراكمية في قاعدة البيانات لتبدأ الإحصائية من الصفر.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Option 3: All (Both Earnings & Searches) */}
+                <div
+                  onClick={() => setResetTarget('all')}
+                  className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${
+                    resetTarget === 'all'
+                      ? 'bg-red-500/10 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.15)]'
+                      : 'bg-black/30 border-white/5 hover:border-white/10'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="resetTarget"
+                    checked={resetTarget === 'all'}
+                    onChange={() => setResetTarget('all')}
+                    className="mt-1 accent-red-500"
+                  />
+                  <div className="flex-1 space-y-1 text-right">
+                    <div className="flex items-center justify-between">
+                      <span className="text-white text-xs font-bold flex items-center gap-1.5 text-red-400">
+                        <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                        <span>تصفير شامل للكل (الأرباح + عمليات البحث)</span>
+                      </span>
+                      <span className="text-[10px] text-red-400 font-mono">الكل ➔ 0</span>
+                    </div>
+                    <p className="text-gray-400 text-[10px] leading-normal">
+                      تصفير كامل لكافة إحصائيات الإعلانات ونقراتها ومداخيلها بالإضافة إلى سجلات وعدادات البحث معاً.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Warning note */}
+              <div className="p-3 bg-red-950/20 border border-red-900/30 rounded-xl text-right flex gap-2 items-center text-[10px] text-red-300">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                <span>تحذير: التصفير يتم على قاعدة بيانات Firestore الحقيقية مباشرة ولا يمكن التراجع عنه.</span>
+              </div>
+
+              {/* Modal Buttons */}
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleExecuteReset}
+                  disabled={resetting}
+                  className="flex-1 py-2.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-extrabold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer active:scale-95"
+                >
+                  {resetting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>جاري التصفير الفعلي...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>
+                        {resetTarget === 'earnings' && 'تأكيد تصفير الأرباح فقط'}
+                        {resetTarget === 'searches' && 'تأكيد تصفير البحث فقط'}
+                        {resetTarget === 'all' && 'تأكيد التصفير الشامل للكل'}
+                      </span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setResetModalOpen(false)}
+                  disabled={resetting}
+                  className="px-5 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold rounded-xl border border-white/5 transition-all cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldCheck, Smartphone, Cpu, ShieldAlert, KeyRound, RefreshCw, X, HelpCircle, UserCheck } from 'lucide-react';
+import { ShieldCheck, Smartphone, ShieldAlert, RefreshCw, X } from 'lucide-react';
 import { User } from '../types';
 import { safeFetchJson } from '../utils/apiHelper';
 
@@ -152,29 +152,6 @@ export default function AuthModal({
                   <div className="absolute top-1/2 -translate-y-1/2 right-3 text-gray-500">
                     <Smartphone className="w-4 h-4" />
                   </div>
-                </div>
-              </div>
-
-              {/* Simulated specs container showing device characteristics being bound */}
-              <div className="p-3 rounded-xl bg-[#0c122b] border border-white/5 space-y-2">
-                <span className="text-[9px] text-[#c5a059] font-bold uppercase block">خصائص الربط البيومتري للجهاز</span>
-                
-                <div className="flex items-center justify-between text-[10px] text-gray-400">
-                  <span className="font-mono text-white text-[9px] truncate max-w-[150px]">{deviceSpecs.id}</span>
-                  <span className="flex items-center gap-1">
-                    <span>معرف الجهاز (ID)</span>
-                    <Cpu className="w-3 h-3 text-[#c5a059]" />
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-[10px] text-gray-400">
-                  <span className="text-white font-bold">{deviceSpecs.type}</span>
-                  <span>طراز العتاد</span>
-                </div>
-
-                <div className="flex items-center justify-between text-[10px] text-gray-400">
-                  <span className="text-white font-bold">{deviceSpecs.browser}</span>
-                  <span>بوابة العبور (المتصفح)</span>
                 </div>
               </div>
 
