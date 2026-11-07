@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, Smartphone, Award, HelpCircle, ShieldCheck, Cpu, LogOut, CheckCircle, 
@@ -11,10 +11,17 @@ import SyncSection from './components/SyncSection';
 import RewardsSection from './components/RewardsSection';
 import AdminDashboard from './components/AdminDashboard';
 import AuthModal from './components/AuthModal';
+import ExitModal from './components/ExitModal';
 import AdBanner from './components/AdBanner';
 import { User, Ad, Transaction, SystemSettings } from './types';
 import { safeFetchJson } from './utils/apiHelper';
 import { WALLET_3D_GRAPHIC, GOLD_COINS_STACK } from './assets/walletAssetBase64';
+import { 
+  registerBackHandler, 
+  dispatchTopBackHandler, 
+  pushHistoryGuard, 
+  executeAppExit 
+} from './utils/backNavigation';
 
 interface Toast {
   id: string;
@@ -41,7 +48,13 @@ const DEFAULT_SETTINGS: SystemSettings = {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>('search');
+  const [activeTab, setActiveTabState] = useState<string>('search');
+  const [tabHistory, setTabHistory] = useState<string[]>([]);
+  const tabHistoryRef = useRef<string[]>([]);
+  const [exitModalOpen, setExitModalOpen] = useState(false);
+  const lastBackPressRef = useRef<number>(0);
+  const exitTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [adminToken, setAdminToken] = useState<string>(() => {
     return localStorage.getItem('maarouf_admin_token') || '';
@@ -58,6 +71,135 @@ export default function App() {
   const [adminInput, setAdminInput] = useState('');
   const [homeSyncing, setHomeSyncing] = useState(false);
   const [syncedInSession, setSyncedInSession] = useState(false);
+
+  // Sync tabHistoryRef with state
+  useEffect(() => {
+    tabHistoryRef.current = tabHistory;
+  }, [tabHistory]);
+
+  // Unified Tab Navigation Handler: records actual user navigation history
+  const setActiveTab = useCallback((newTab: string) => {
+    setActiveTabState((currentTab) => {
+      if (newTab === currentTab) return currentTab;
+      setTabHistory((prev) => {
+        const next = [...prev, currentTab];
+        tabHistoryRef.current = next;
+        return next;
+      });
+      return newTab;
+    });
+  }, []);
+
+  // Register Android Back Button handler for Drawer menu
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const unregister = registerBackHandler(() => {
+      setDrawerOpen(false);
+      return true;
+    });
+    return unregister;
+  }, [drawerOpen]);
+
+  // Register Android Back Button handler for Authentication modal
+  useEffect(() => {
+    if (!authModalOpen) return;
+    const unregister = registerBackHandler(() => {
+      setAuthModalOpen(false);
+      return true;
+    });
+    return unregister;
+  }, [authModalOpen]);
+
+  // Register Android Back Button handler when ExitModal is already visible
+  useEffect(() => {
+    if (!exitModalOpen) return;
+    const unregister = registerBackHandler(() => {
+      const elapsed = Date.now() - lastBackPressRef.current;
+      if (elapsed < 2000) {
+        // Double-back within 2 seconds: Confirmed Exit!
+        if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+        setExitModalOpen(false);
+        executeAppExit();
+        return true;
+      } else {
+        if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+        setExitModalOpen(false);
+        lastBackPressRef.current = 0;
+        return true;
+      }
+    });
+    return unregister;
+  }, [exitModalOpen]);
+
+  // Unified Android Back Button (popstate) Global Controller
+  useEffect(() => {
+    pushHistoryGuard();
+
+    const handlePopState = () => {
+      // Priority 1: Topmost registered modal or overlay (Drawer, AuthModal, Ad player, ExitModal)
+      const handled = dispatchTopBackHandler();
+      if (handled) {
+        pushHistoryGuard();
+        return;
+      }
+
+      // Priority 2: Navigate back to the previous screen in the app's history
+      if (tabHistoryRef.current.length > 0) {
+        const nextHistory = [...tabHistoryRef.current];
+        const prevTab = nextHistory.pop()!;
+        tabHistoryRef.current = nextHistory;
+        setTabHistory(nextHistory);
+        setActiveTabState(prevTab);
+        pushHistoryGuard();
+        return;
+      }
+
+      // Priority 3: On Root Home screen ('search') with no previous screens and no open modals
+      const elapsed = Date.now() - lastBackPressRef.current;
+      if (elapsed > 0 && elapsed < 2000) {
+        // Second press within 2s: Allow Exit
+        if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+        setExitModalOpen(false);
+        executeAppExit();
+      } else {
+        // First press: Show exit confirmation modal with 2s timer
+        lastBackPressRef.current = Date.now();
+        setExitModalOpen(true);
+        pushHistoryGuard();
+
+        if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+        exitTimerRef.current = setTimeout(() => {
+          lastBackPressRef.current = 0;
+          setExitModalOpen(false);
+        }, 2000);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
+    };
+  }, []);
+
+  const handleCancelExit = () => {
+    setExitModalOpen(false);
+    lastBackPressRef.current = 0;
+    if (exitTimerRef.current) {
+      clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+  };
+
+  const handleConfirmExit = () => {
+    setExitModalOpen(false);
+    lastBackPressRef.current = 0;
+    if (exitTimerRef.current) {
+      clearTimeout(exitTimerRef.current);
+      exitTimerRef.current = null;
+    }
+    executeAppExit();
+  };
 
   // Toast Dispatcher Helper
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'success') => {
@@ -139,7 +281,9 @@ export default function App() {
     setSyncedInSession(false);
     setTransactions([]);
     showToast('تم تسجيل الخروج بنجاح.', 'info');
-    setActiveTab('search');
+    setTabHistory([]);
+    tabHistoryRef.current = [];
+    setActiveTabState('search');
   };
 
   // Execute Search query lookup
@@ -631,6 +775,14 @@ export default function App() {
           void syncContactsAfterLogin(user);
         }}
         showToast={showToast}
+      />
+
+      {/* Global Android Back Button Exit Confirmation Dialog */}
+      <ExitModal
+        isOpen={exitModalOpen}
+        onClose={handleCancelExit}
+        onConfirmExit={handleConfirmExit}
+        durationMs={2000}
       />
 
       {/* CUSTOM PREMIUM LUXURY TOAST NOTIFICATION STACK */}

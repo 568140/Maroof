@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Search, Info, Users, Database, ShieldAlert, Coins, Copy, Check, RefreshCw, Star, AlertTriangle, ArrowRight, Eye, Play, Clock, Sparkles, X, Activity } from 'lucide-react';
 import { User, Contact, Ad, PlatformMetrics } from '../types';
 import { APP_LOGO } from '../assets/logoBase64';
+import { registerBackHandler } from '../utils/backNavigation';
 
 interface SearchSectionProps {
   currentUser: User | null;
@@ -202,6 +203,17 @@ export default function SearchSection({
     }
     return () => clearInterval(interval);
   }, [isWatchingSeries, seriesTimer, currentAdIndex]);
+
+  // Intercept Android Back Button to dismiss the video series challenge modal
+  useEffect(() => {
+    if (!isWatchingSeries) return;
+    const unregister = registerBackHandler(() => {
+      setIsWatchingSeries(false);
+      showToast('تم إلغاء التحدي وإغلاق مشغل الإعلانات.', 'info');
+      return true;
+    });
+    return unregister;
+  }, [isWatchingSeries, showToast]);
 
   const handleCompleteAdSeries = async () => {
     setIsWatchingSeries(false);
