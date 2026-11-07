@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Menu, User, Sparkles, Coins, LogOut, ShieldCheck, HelpCircle, Settings, Bell, Search, History, Gift } from 'lucide-react';
+import { Menu, User, Sparkles, Coins, LogOut, ShieldCheck, HelpCircle, Settings, Bell, Search, History, Gift, Crown, Award } from 'lucide-react';
 import { User as UserType } from '../types';
 import { APP_LOGO } from '../assets/logoBase64';
 import { APP_AVATAR } from '../assets/avatarBase64';
@@ -61,15 +61,25 @@ export default function Header({
         {/* User context action */}
         <div className="flex items-center gap-3">
           {currentUser ? (
-            <div className="flex items-center gap-3">
-              {/* Point badge */}
-              <div 
-                onClick={() => setActiveTab('rewards')}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0a2368] border border-[#ffcc00]/40 text-xs text-[#ffcc00] font-bold cursor-pointer hover:border-[#ffcc00] shadow-[0_0_10px_rgba(255,204,0,0.2)] transition-all"
-              >
-                <Coins className="w-3.5 h-3.5" />
-                <span>{currentUser.points} نقطة</span>
-              </div>
+            <div className="flex items-center gap-2 sm:gap-3">
+              {currentUser.isGuest ? (
+                <button
+                  onClick={onOpenAuth}
+                  className="px-2.5 py-1 text-[11px] font-bold text-slate-950 bg-gradient-to-r from-[#ffcc00] to-[#f59e0b] rounded-lg shadow-sm hover:brightness-110 transition-all flex items-center gap-1"
+                  title="ربط الحساب برقم هاتف لحفظ بياناتك"
+                >
+                  <span>تسجيل الدخول</span>
+                </button>
+              ) : (
+                /* Point badge */
+                <div 
+                  onClick={() => setActiveTab('rewards')}
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0a2368] border border-[#ffcc00]/40 text-xs text-[#ffcc00] font-bold cursor-pointer hover:border-[#ffcc00] shadow-[0_0_10px_rgba(255,204,0,0.2)] transition-all"
+                >
+                  <Coins className="w-3.5 h-3.5" />
+                  <span>{currentUser.points} نقطة</span>
+                </div>
+              )}
 
               {/* Free search balance badge */}
               <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#071948] border border-[#0d52ff]/30 text-[11px] text-white">
@@ -77,11 +87,27 @@ export default function Header({
                 <span className="text-slate-300">/ 3 عمليات مجانية</span>
               </div>
 
+              {/* VIP Upgrade Action Button */}
+              <button
+                type="button"
+                onClick={() => setActiveTab('upgrade')}
+                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                  activeTab === 'upgrade'
+                    ? 'bg-purple-600/30 text-yellow-300 border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.4)]'
+                    : 'bg-gradient-to-r from-purple-900/40 to-indigo-900/40 text-purple-200 border-purple-500/30 hover:border-purple-400 hover:text-white'
+                }`}
+                title="الترقية وباقات كاشف المسجّل VIP"
+              >
+                <Crown className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+                <span className="hidden sm:inline">الترقية</span>
+                <span>VIP</span>
+              </button>
+
               {/* User Avatar Action (with official high-res character mascot) */}
               <button
                 onClick={() => setActiveTab('profile')}
                 className={`w-10 h-10 rounded-full bg-[#0d2a7a] border-2 ${activeTab === 'profile' ? 'border-[#ffcc00] shadow-[0_0_15px_rgba(255,204,0,0.5)]' : 'border-[#ffcc00]/50 hover:border-[#ffcc00]'} overflow-hidden flex items-center justify-center p-0.5 transition-all shadow-md group`}
-                title="الملف الشخصي"
+                title={currentUser.isGuest ? "حساب زائر" : "الملف الشخصي"}
               >
                 <img
                   src={APP_AVATAR}
@@ -239,6 +265,21 @@ export default function Header({
             >
               <Gift className="w-4.5 h-4.5" />
               <span>المكافآت والربح</span>
+            </button>
+
+            {/* VIP Plans & Upgrade Link */}
+            <button
+              onClick={() => {
+                setActiveTab('upgrade');
+                setDrawerOpen(false);
+              }}
+              className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-all ${activeTab === 'upgrade' ? 'bg-gradient-to-r from-purple-900/40 to-amber-950/40 text-amber-300 font-bold border border-amber-500/40' : 'text-gray-300 hover:bg-white/5 hover:text-white'}`}
+            >
+              <Crown className="w-4.5 h-4.5 text-yellow-400 shrink-0" />
+              <span>الترقية وباقات VIP</span>
+              <span className="mr-auto px-2 py-0.5 bg-gradient-to-r from-amber-500 to-yellow-500 text-black text-[9px] font-black rounded-full shadow-sm">
+                كاشف المسجل
+              </span>
             </button>
 
             {currentUser && (

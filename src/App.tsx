@@ -9,6 +9,7 @@ import Header from './components/Header';
 import SearchSection from './components/SearchSection';
 import SyncSection from './components/SyncSection';
 import RewardsSection from './components/RewardsSection';
+import UpgradeSection from './components/UpgradeSection';
 import AdminDashboard from './components/AdminDashboard';
 import AuthModal from './components/AuthModal';
 import ExitModal from './components/ExitModal';
@@ -22,6 +23,7 @@ import {
   pushHistoryGuard, 
   executeAppExit 
 } from './utils/backNavigation';
+import { getRealDeviceFingerprint, getFullDeviceSpecs } from './utils/deviceFingerprint';
 
 interface Toast {
   id: string;
@@ -44,7 +46,9 @@ const DEFAULT_SETTINGS: SystemSettings = {
   maxAccountsPerDevice: 1,
   multiAccountDetection: true,
   logActivity: true,
-  adminPhone: '774919194'
+  adminPhone: '774919194',
+  requirePhoneLogin: true,
+  allowRevealRegistrarGlobal: false
 };
 
 export default function App() {
@@ -215,10 +219,11 @@ export default function App() {
     const initApp = async () => {
       try {
         // Fetch Settings
+        let loadedSettings: SystemSettings = DEFAULT_SETTINGS;
         const settingsRes = await fetch('/api/settings');
         if (settingsRes.ok) {
-          const sData = await settingsRes.json();
-          setSystemSettings(sData);
+          loadedSettings = await settingsRes.json();
+          setSystemSettings(loadedSettings);
         }
 
         // Fetch Ads
@@ -228,22 +233,49 @@ export default function App() {
           setAdsList(aData);
         }
 
-        // Try to auto-log in if device fingerprint exists
-        const deviceFingerprint = localStorage.getItem('maarouf_device_fingerprint');
+        // Compute deterministic hardware device fingerprint & device model
+        const hwSpecs = getFullDeviceSpecs();
+        const deviceFingerprint = hwSpecs.deviceId;
+
         const savedPhone = localStorage.getItem('maarouf_phone_session');
+        let userFound: User | null = null;
 
-        if (savedPhone || deviceFingerprint) {
-          let url = '/api/auth/me?';
-          if (savedPhone) url += `phone=${savedPhone}`;
-          else if (deviceFingerprint) url += `deviceId=${deviceFingerprint}`;
-
-          const meRes = await fetch(url);
+        if (savedPhone) {
+          const meRes = await fetch(
+            `/api/auth/me?phone=${encodeURIComponent(savedPhone)}&deviceId=${encodeURIComponent(deviceFingerprint)}&deviceType=${encodeURIComponent(hwSpecs.deviceType)}&browser=${encodeURIComponent(hwSpecs.browser)}`
+          );
           if (meRes.ok) {
-            const userData = await meRes.json();
-            setCurrentUser(userData);
-            localStorage.setItem('maarouf_phone_session', userData.phone);
-            fetchUserTransactions(userData.phone);
+            userFound = await meRes.json();
           }
+        } else if (deviceFingerprint) {
+          const meRes = await fetch(`/api/auth/me?deviceId=${encodeURIComponent(deviceFingerprint)}`);
+          if (meRes.ok) {
+            const u = await meRes.json();
+            if (loadedSettings?.requirePhoneLogin && u.isGuest) {
+              userFound = null;
+            } else {
+              userFound = u;
+            }
+          }
+        }
+
+        // If no registered user found and phone login is NOT required by Admin, initialize guest user!
+        if (!userFound && loadedSettings && !loadedSettings.requirePhoneLogin) {
+          const guestRes = await fetch(
+            `/api/auth/guest-session?deviceId=${encodeURIComponent(deviceFingerprint)}&deviceType=${encodeURIComponent(hwSpecs.deviceType)}&browser=${encodeURIComponent(hwSpecs.browser)}`
+          );
+          if (guestRes.ok) {
+            const guestData = await guestRes.json();
+            userFound = guestData.user;
+          }
+        }
+
+        if (userFound) {
+          setCurrentUser(userFound);
+          if (!userFound.isGuest) {
+            localStorage.setItem('maarouf_phone_session', userFound.phone);
+          }
+          fetchUserTransactions(userFound.phone);
         }
       } catch (e) {
         console.warn('Error loading initial app config:', e);
@@ -267,7 +299,14 @@ export default function App() {
   const refreshUserProfile = async () => {
     if (!currentUser) return;
     try {
-      const userData = await safeFetchJson(`/api/auth/me?phone=${currentUser.phone}`);
+      const deviceFingerprint = getRealDeviceFingerprint() || currentUser.deviceId || '';
+      let url = '/api/auth/me?';
+      if (!currentUser.isGuest && currentUser.phone && !currentUser.phone.startsWith('زائر')) {
+        url += `phone=${encodeURIComponent(currentUser.phone)}&deviceId=${encodeURIComponent(deviceFingerprint)}`;
+      } else {
+        url += `deviceId=${encodeURIComponent(deviceFingerprint)}`;
+      }
+      const userData = await safeFetchJson(url);
       setCurrentUser(userData);
       fetchUserTransactions(userData.phone);
     } catch (e) {
@@ -288,9 +327,15 @@ export default function App() {
 
   // Execute Search query lookup
   const handleSearchLookup = async (query: string, type: 'standard' | 'advanced') => {
-    if (!currentUser) throw new Error('يرجى تسجيل الدخول أولاً للبحث.');
+    const deviceFingerprint = getRealDeviceFingerprint() || currentUser?.deviceId || '';
+    if (systemSettings.requirePhoneLogin && (!currentUser || currentUser.isGuest)) {
+      setAuthModalOpen(true);
+      throw new Error('يرجى تسجيل الدخول برقم هاتفك أولاً للبحث.');
+    }
 
-    const url = `/api/search${type === 'advanced' ? '/advanced' : ''}?query=${query}&phone=${currentUser.phone}`;
+    const phoneParam = currentUser && !currentUser.isGuest ? `&phone=${currentUser.phone}` : '';
+    const deviceParam = deviceFingerprint ? `&deviceId=${deviceFingerprint}` : '';
+    const url = `/api/search${type === 'advanced' ? '/advanced' : ''}?query=${query}${phoneParam}${deviceParam}`;
     const data = await safeFetchJson(url);
 
     // Refresh profile state for balance decrement
@@ -300,11 +345,13 @@ export default function App() {
 
   // Handle Contact sync upload for a known user.
   const syncContactsForUser = async (user: User, contacts: { name: string; phone: string }[]) => {
+    const deviceFingerprint = getRealDeviceFingerprint() || user.deviceId || '';
     const data = await safeFetchJson('/api/contacts/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         phone: user.phone,
+        deviceId: deviceFingerprint,
         contacts
       })
     });
@@ -339,7 +386,11 @@ export default function App() {
         return;
       }
       const result = await syncContactsForUser(user, contacts);
-      showToast(`تم تسجيل الدخول ومزامنة ${result.importedCount} جهة اتصال بنجاح.`, 'success');
+      if (result.importedCount > 0) {
+        showToast(`تم تسجيل الدخول ومزامنة ${result.importedCount} جهة اتصال جديدة بنجاح (تم تخطي ${result.skippedCount || 0} متطابقة).`, 'success');
+      } else {
+        showToast(`جهات الاتصال متزامنة ومحدثة مسبقاً (${result.skippedCount || 0} جهة). لا توجد أرقام جديدة لمزامنتها.`, 'info');
+      }
     } catch (error: any) {
       showToast(error?.message || 'تم تسجيل الدخول، لكن فشلت مزامنة جهات الاتصال. يمكنك المحاولة من زر المزامنة.', 'error');
     } finally {
@@ -367,7 +418,11 @@ export default function App() {
         return;
       }
       const result = await handleSyncContacts(contacts);
-      showToast(`تمت مزامنة ${result.importedCount} جهة اتصال بنجاح.`, 'success');
+      if (result.importedCount > 0) {
+        showToast(`تمت مزامنة ${result.importedCount} جهة اتصال جديدة بنجاح (تم تخطي ${result.skippedCount || 0} مسجلة مسبقاً لهذا الجهاز).`, 'success');
+      } else {
+        showToast(`جهات الاتصال محدثة بالفعل (${result.skippedCount || 0} جهة اتصال متطابقة مسجلة لهذا الجهاز). لا توجد أرقام جديدة أو مختلفة.`, 'info');
+      }
     } catch (error: any) {
       showToast(error?.message || 'فشلت المزامنة. تأكد من منح إذن قراءة جهات الاتصال ثم أعد المحاولة.', 'error');
     } finally {
@@ -413,6 +468,20 @@ export default function App() {
     });
 
     setSystemSettings(data.settings);
+
+    // If login requirement changed
+    if (!data.settings.requirePhoneLogin && (!currentUser || currentUser.isGuest)) {
+      const hwSpecs = getFullDeviceSpecs();
+      const guestRes = await fetch(
+        `/api/auth/guest-session?deviceId=${encodeURIComponent(hwSpecs.deviceId)}&deviceType=${encodeURIComponent(hwSpecs.deviceType)}&browser=${encodeURIComponent(hwSpecs.browser)}`
+      );
+      if (guestRes.ok) {
+        const guestData = await guestRes.json();
+        setCurrentUser(guestData.user);
+      }
+    } else if (data.settings.requirePhoneLogin && currentUser?.isGuest) {
+      setCurrentUser(null);
+    }
   };
 
   const isManagerPhone = (phone?: string, adminPhone?: string) => {
@@ -507,6 +576,7 @@ export default function App() {
                 )}
                 <SearchSection
                   currentUser={currentUser}
+                  systemSettings={systemSettings}
                   onSearch={handleSearchLookup}
                   setActiveTab={setActiveTab}
                   onOpenAuth={() => setAuthModalOpen(true)}
@@ -535,6 +605,18 @@ export default function App() {
                 adsList={adsList}
                 onPlayAd={handlePlayAdReward}
                 transactions={transactions}
+                onOpenAuth={() => setAuthModalOpen(true)}
+                showToast={showToast}
+                onRefreshUser={refreshUserProfile}
+              />
+            )}
+
+            {/* VIP PLANS & UPGRADE TAB */}
+            {activeTab === 'upgrade' && (
+              <UpgradeSection
+                currentUser={currentUser}
+                systemSettings={systemSettings}
+                setActiveTab={setActiveTab}
                 onOpenAuth={() => setAuthModalOpen(true)}
                 showToast={showToast}
                 onRefreshUser={refreshUserProfile}
@@ -590,19 +672,27 @@ export default function App() {
                         مستخدم معروف اليمني
                       </div>
 
-                      {/* User Phone ID Pill with Click-to-Copy */}
+                      {/* User Phone ID Pill with Click-to-Copy or Login prompt for Guest */}
                       <button
                         type="button"
                         onClick={() => {
-                          navigator.clipboard.writeText(currentUser.phone);
-                          showToast(`تم نسخ رقم الحساب: ${currentUser.phone}`, 'info');
+                          if (currentUser.isGuest) {
+                            setAuthModalOpen(true);
+                          } else {
+                            navigator.clipboard.writeText(currentUser.phone);
+                            showToast(`تم نسخ رقم الحساب: ${currentUser.phone}`, 'info');
+                          }
                         }}
                         className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-[#020b24]/90 border-2 border-[#ffcc00]/60 hover:border-[#ffcc00] text-white text-xs md:text-sm font-mono font-bold transition-all shadow-inner group cursor-pointer"
-                        title="انقر لنسخ رقم الحساب"
+                        title={currentUser.isGuest ? "انقر لتسجيل الدخول برقمك" : "انقر لنسخ رقم الحساب"}
                       >
                         <span className="text-[#ffcc00] text-sm">🪪</span>
-                        <span className="tracking-wider">{currentUser.phone}</span>
-                        <Copy className="w-3.5 h-3.5 text-[#ffcc00] group-hover:scale-110 transition-transform" />
+                        <span className="tracking-wider">{currentUser.isGuest ? 'حساب زائر (ربط رقم الهاتف)' : currentUser.phone}</span>
+                        {currentUser.isGuest ? (
+                          <span className="text-[10px] text-[#ffcc00] underline font-sans">تسجيل</span>
+                        ) : (
+                          <Copy className="w-3.5 h-3.5 text-[#ffcc00] group-hover:scale-110 transition-transform" />
+                        )}
                       </button>
                     </div>
 

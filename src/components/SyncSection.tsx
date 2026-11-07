@@ -6,7 +6,7 @@ import { User } from '../types';
 interface SyncSectionProps {
   currentUser: User | null;
   isOwner: boolean;
-  onSyncContacts: (contacts: { name: string; phone: string }[]) => Promise<{ user: User; importedCount: number }>;
+  onSyncContacts: (contacts: { name: string; phone: string }[]) => Promise<{ user: User; importedCount: number; skippedCount?: number; totalReceived?: number }>;
   showToast: (message: string, type: 'success' | 'error' | 'warning' | 'info') => void;
   setActiveTab: (tab: string) => void;
 }
@@ -20,6 +20,7 @@ export default function SyncSection({
 }: SyncSectionProps) {
   const [syncing, setSyncing] = useState(false);
   const [successCount, setSuccessCount] = useState<number | null>(null);
+  const [skippedCount, setSkippedCount] = useState<number>(0);
   const [manualText, setManualText] = useState('');
   const [syncMethod, setSyncMethod] = useState<'real' | 'manual'>('real');
   const [parsedContactsCount, setParsedContactsCount] = useState<number>(0);
@@ -47,7 +48,12 @@ export default function SyncSection({
 
       const response = await onSyncContacts(contacts);
       setSuccessCount(response.importedCount);
-      showToast(`تمت مزامنة ${response.importedCount} جهة اتصال تلقائياً بنجاح.`, 'success');
+      setSkippedCount(response.skippedCount || 0);
+      if (response.importedCount > 0) {
+        showToast(`تمت مزامنة ${response.importedCount} جهة اتصال جديدة بنجاح (وتم تخطي ${response.skippedCount || 0} جهة اتصال متطابقة مسجلة مسبقاً لهذا الجهاز).`, 'success');
+      } else {
+        showToast(`جهات الاتصال محدثة بالفعل. تم التعرف على جميع الأرقام (${response.skippedCount || 0} جهة) ولم يتم العثور على أرقام جديدة أو مختلفة.`, 'info');
+      }
     } catch (err: any) {
       console.error('Android contacts sync error:', err);
       showToast(err?.message || 'تعذر الوصول إلى جهات الاتصال. تحقق من إذن القراءة ثم حاول مرة أخرى.', 'error');
@@ -198,7 +204,12 @@ export default function SyncSection({
     try {
       const response = await onSyncContacts(pendingContacts);
       setSuccessCount(response.importedCount);
-      showToast(`تمت مزامنة حقيقية لـ ${response.importedCount} جهة اتصال بنجاح!`, 'success');
+      setSkippedCount(response.skippedCount || 0);
+      if (response.importedCount > 0) {
+        showToast(`تمت إضافة وتحديث ${response.importedCount} جهة اتصال جديدة بنجاح (وتم تخطي ${response.skippedCount || 0} جهة اتصال متطابقة مسجلة لهذا الجهاز).`, 'success');
+      } else {
+        showToast(`جميع الأرقام بالملف (${response.skippedCount || 0} جهة) مسجلة مسبقاً لهذا الجهاز دون تغيير.`, 'info');
+      }
       setPendingContacts([]);
       setParsedContactsCount(0);
     } catch (err: any) {
@@ -207,8 +218,6 @@ export default function SyncSection({
       setSyncing(false);
     }
   };
-
-
 
   // --- 4. Manual Textarea Sync ---
   const handleManualSync = async (e: React.FormEvent) => {
@@ -252,7 +261,12 @@ export default function SyncSection({
     try {
       const response = await onSyncContacts(parsedContacts);
       setSuccessCount(response.importedCount);
-      showToast(`تمت مزامنة ${response.importedCount} جهة اتصال مضافة يدوياً!`, 'success');
+      setSkippedCount(response.skippedCount || 0);
+      if (response.importedCount > 0) {
+        showToast(`تمت إضافة ${response.importedCount} جهة اتصال جديدة بنجاح (تم تخطي ${response.skippedCount || 0} متطابقة).`, 'success');
+      } else {
+        showToast(`الرقم والاسم المدخل مسجل مسبقاً لهذا الجهاز دون تغيير.`, 'info');
+      }
       setManualText('');
     } catch (err: any) {
       showToast(err.message || 'فشلت المزامنة اليدوية.', 'error');
@@ -290,13 +304,20 @@ export default function SyncSection({
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <h4 className="text-white text-sm font-bold">
-              حالة التفعيل: {currentUser.contactsSynced ? 'الحساب مفعل (نشط)' : 'غير مفعل'}
+            <h4 className="text-white text-sm font-bold flex items-center gap-2">
+              <span>حالة التفعيل: {currentUser.contactsSynced ? 'الحساب مفعل (نشط)' : 'غير مفعل'}</span>
+              {currentUser.isGuest && (
+                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                  وضع الزائر
+                </span>
+              )}
             </h4>
             <p className="text-gray-400 text-[11px] mt-0.5">
               {currentUser.contactsSynced 
-                ? 'لقد قمت بمزامنة جهات الاتصال سابقاً. تضمن خوارزمية الذكاء الاصطناعي تفادي التكرار نهائياً وتنزيل الأسماء الجديدة فقط!' 
-                : 'تحتاج لمزامنة جهات اتصالك لتفعيل محرك البحث وحصولك على الرصيد اليومي والترويجي.'}
+                ? 'لقد قمت بمزامنة جهات الاتصال لهذا الجهاز سابقاً. محرك البحث جاهز ومتاح لك الآن!' 
+                : currentUser.isGuest
+                  ? 'أنت تستخدم وضع الزائر بدون تسجيل دخول. قم بمزامنة جهات اتصال هاتفك لتفعيل محرك البحث واستخدامه فوراً.'
+                  : 'تحتاج لمزامنة جهات اتصالك لتفعيل محرك البحث وحصولك على الرصيد اليومي والترويجي.'}
             </p>
           </div>
         </div>
@@ -500,20 +521,30 @@ export default function SyncSection({
             <div className="flex items-start gap-2">
               <CheckCircle className="w-5 h-5 text-green-400 shrink-0 mt-0.5" />
               <div>
-                <h4 className="text-white text-xs font-bold">تمت عملية المزامنة الحقيقية بنجاح!</h4>
+                <h4 className="text-white text-xs font-bold">
+                  {successCount > 0 ? 'تمت عملية المزامنة وحفظ الأرقام بنجاح!' : 'جهات الاتصال متزامنة ومحدثة مسبقاً'}
+                </h4>
                 <p className="text-gray-400 text-[10px] mt-0.5">
-                  تمت تصفية وتحديث <span className="text-green-400 font-bold">+{successCount}</span> جهة اتصال بقاعدة البيانات دون أي تكرار للمدخرات السابقة.
+                  {successCount > 0 ? (
+                    <>
+                      تمت إضافة وتحديث <span className="text-green-400 font-bold">+{successCount}</span> جهة اتصال جديدة بقاعدة البيانات (وتم فحص وتخطي <span className="text-[#ffcc00] font-bold">{skippedCount}</span> جهة اتصال متطابقة مسجلة مسبقاً لهذا الجهاز لمنع التكرار).
+                    </>
+                  ) : (
+                    <>
+                      تم فحص جميع جهات الاتصال (<span className="text-[#ffcc00] font-bold">{skippedCount}</span> جهة اتصال) وهي مطابقة تماماً للمسجل مسبقاً لهذا الجهاز. لم يتم العثور على أرقام جديدة أو أسماء معدلة.
+                    </>
+                  )}
                 </p>
               </div>
             </div>
             
             <div className="flex justify-between items-center text-[11px] pt-2 border-t border-white/5">
-              <span className="text-[#e5c158] font-bold">+50 نقطة</span>
-              <span className="text-gray-400">مكافأة تنشيط الحساب المحدثة</span>
+              <span className="text-[#e5c158] font-bold">{successCount > 0 ? '+50 نقطة' : 'رصيد محافظ عليه'}</span>
+              <span className="text-gray-400">حالة نقاط المحفظة</span>
             </div>
             <div className="flex justify-between items-center text-[11px]">
-              <span className="text-white font-bold">3 / 3 يومياً</span>
-              <span className="text-gray-400">رصيد البحث المجاني المتاح حالياً</span>
+              <span className="text-white font-bold">نشط ومفعل</span>
+              <span className="text-gray-400">حالة حساب معروف</span>
             </div>
 
             <button

@@ -96,6 +96,8 @@ export function createExpressApp(): express.Express {
   app.get('/api/auth/me', async (req, res) => {
     const phone = req.query.phone as string;
     const deviceId = req.query.deviceId as string;
+    const deviceType = req.query.deviceType as string;
+    const browser = req.query.browser as string;
 
     if (!phone && !deviceId) {
       return res.status(400).json({ error: 'مطلوب تحديد رقم الهاتف أو معرف الجهاز.' });
@@ -110,7 +112,37 @@ export function createExpressApp(): express.Express {
         return res.status(404).json({ error: 'الحساب غير موجود.' });
       }
 
+      // Automatically upgrade legacy random 'mv_' deviceId to real hardware 'hw_' fingerprint
+      if (deviceId && deviceId.startsWith('hw_') && user.deviceId !== deviceId && !user.isGuest) {
+        user.deviceId = deviceId;
+        if (deviceType) user.deviceType = deviceType;
+        if (browser) user.browser = browser;
+        await DbService.saveUser(user);
+      }
+
       res.json(user);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Guest Session Route (for when phone login is optional)
+  app.get('/api/auth/guest-session', async (req, res) => {
+    const deviceId = req.query.deviceId as string;
+    const deviceType = req.query.deviceType as string;
+    const browser = req.query.browser as string;
+
+    if (!deviceId) {
+      return res.status(400).json({ error: 'مطلوب معرف الجهاز.' });
+    }
+
+    try {
+      const settings = await DbService.getSettings();
+      const guestUser = await DbService.getOrCreateGuestUser(deviceId, deviceType, browser);
+      res.json({
+        user: guestUser,
+        requirePhoneLogin: settings.requirePhoneLogin ?? true
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -159,12 +191,15 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
         return res.json({ message: 'تم تسجيل الدخول بنجاح', user: existingUser });
       }
 
-      // Check device binding limits (Prevent multiple accounts on same device), unless it is the manager
+      // Check device binding limits (Prevent multiple registered accounts on same hardware device), unless it is the manager
       if (!isManager && settings.multiAccountDetection) {
-        const usersOnThisDevice = await DbService.getUsersByDeviceId(deviceId);
-        if (usersOnThisDevice.length >= settings.maxAccountsPerDevice) {
+        const allUsersOnDevice = await DbService.getUsersByDeviceId(deviceId);
+        const registeredUsersOnDevice = allUsersOnDevice.filter(
+          u => !u.isGuest && u.phone && !u.phone.startsWith('زائر')
+        );
+        if (registeredUsersOnDevice.length >= settings.maxAccountsPerDevice) {
           return res.status(400).json({
-            error: `عذراً، يوجد بالفعل حساب مرتبط بهذا الجهاز (${usersOnThisDevice[0].phone}). يمنع إنشاء عدة حسابات من نفس الجهاز.`
+            error: `عذراً، يوجد بالفعل حساب مرتبط ببصمة هذا الجهاز (${registeredUsersOnDevice[0].phone}). يمنع إنشاء عدة حسابات من نفس الجهاز.`
           });
         }
       }
@@ -202,23 +237,44 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
 
   // Contact Synchronization (Cleanses, Saves, and Activates account)
   app.post('/api/contacts/sync', async (req, res) => {
-    const { phone, contacts } = req.body;
+    const { phone, deviceId, contacts } = req.body;
 
-    if (!phone || !contacts || !Array.isArray(contacts)) {
-      return res.status(400).json({ error: 'المعطيات غير صالحة. مطلوب رقم الهاتف وقائمة جهات الاتصال.' });
+    if ((!phone && !deviceId) || !contacts || !Array.isArray(contacts)) {
+      return res.status(400).json({ error: 'المعطيات غير صالحة. مطلوب رقم الهاتف أو معرف الجهاز وقائمة جهات الاتصال.' });
     }
 
     try {
-      const user = await DbService.getUserByPhone(phone);
+      const settings = await DbService.getSettings();
+      let user: User | undefined;
+      if (phone && !phone.startsWith('زائر')) {
+        user = await DbService.getUserByPhone(phone);
+      }
+      if (!user && deviceId) {
+        user = await DbService.getUserById(`guest_${deviceId}`) || await DbService.getUserByDeviceId(deviceId);
+      }
+
+      // If phone login is required by Admin, block guests
+      if (settings.requirePhoneLogin && (!user || user.isGuest)) {
+        return res.status(401).json({
+          error: 'تسجيل الدخول برقم الهاتف مطلوب ومفعّل من الإدارة لمزامنة الأرقام.',
+          requirePhoneLogin: true
+        });
+      }
+
+      // If phone login is not required and user does not exist yet, provision guest user
+      if (!user && !settings.requirePhoneLogin && deviceId) {
+        user = await DbService.getOrCreateGuestUser(deviceId);
+      }
+
       if (!user) {
         return res.status(404).json({ error: 'الحساب غير موجود.' });
       }
 
-      const settings = await DbService.getSettings();
-      let importedCount = 0;
+      const effectiveDeviceId = (deviceId || user.deviceId || '').trim();
+      const syncIdentifier = user.isGuest ? `guest_${effectiveDeviceId.slice(-8)}` : user.phone;
 
-      // Cleanse, Diff, and Save contacts in high-performance Firestore batches of 500
-      importedCount = await DbService.syncUserContacts(user.phone, contacts);
+      // Cleanse, Diff, and Save contacts with strict User & Device isolation
+      const syncResult = await DbService.syncUserContacts(syncIdentifier, contacts, effectiveDeviceId);
 
       // Activate user search balance if not already synced
       const initialSyncBonus = 50;
@@ -233,23 +289,30 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
           action: 'مزامنة جهات الاتصال ومكافأة تفعيل الحساب',
           amount: initialSyncBonus
         });
-      } else {
-        // Award minor reward for updating contacts list
-        user.points += 10;
+      } else if (syncResult.addedCount > 0) {
+        // Award minor reward for adding or updating contacts list
+        const bonus = Math.min(50, Math.max(5, Math.floor(syncResult.addedCount * 2)));
+        user.points += bonus;
         await DbService.addTransaction({
           userId: user.id,
           userPhone: user.phone,
-          action: 'تحديث ومزامنة جهات الاتصال',
-          amount: 10
+          action: `تحديث ومزامنة (${syncResult.addedCount}) جهة اتصال جديدة`,
+          amount: bonus
         });
       }
 
       await DbService.saveUser(user);
 
+      const msg = syncResult.addedCount > 0
+        ? `تمت مزامنة ${syncResult.addedCount} جهة اتصال جديدة بنجاح (وتم تخطي ${syncResult.skippedCount} جهة اتصال مطابقة مسجلة مسبقاً لهذا الجهاز).`
+        : `جهات الاتصال محدثة بالفعل. تم التعرف على جميع الأرقام المسجلة مسبقاً (${syncResult.skippedCount} جهة) ولم يتم العثور على أرقام جديدة أو مختلفة.`;
+
       res.json({
-        message: 'تمت مزامنة جهات الاتصال بنجاح وتفعيل الحساب!',
+        message: msg,
         user,
-        importedCount
+        importedCount: syncResult.addedCount,
+        skippedCount: syncResult.skippedCount,
+        totalReceived: syncResult.totalReceived
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -258,16 +321,38 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
 
   // Standard Caller-ID Search
   app.get('/api/search', async (req, res) => {
-    const { query, phone } = req.query as { query: string; phone: string };
+    const { query, phone, deviceId } = req.query as { query: string; phone?: string; deviceId?: string };
 
-    if (!query || !phone) {
-      return res.status(400).json({ error: 'مطلوب كلمة البحث ورقم الهاتف المستعلم.' });
+    if (!query) {
+      return res.status(400).json({ error: 'مطلوب كلمة أو رقم البحث.' });
     }
 
     try {
-      const user = await DbService.getUserByPhone(phone);
+      const settings = await DbService.getSettings();
+
+      let user: User | undefined;
+      if (phone && !phone.startsWith('زائر')) {
+        user = await DbService.getUserByPhone(phone);
+      }
+      if (!user && deviceId) {
+        user = await DbService.getUserById(`guest_${deviceId}`) || await DbService.getUserByDeviceId(deviceId);
+      }
+
+      // Check if phone login is required by Admin
+      if (settings.requirePhoneLogin && (!user || user.isGuest)) {
+        return res.status(401).json({
+          error: 'تسجيل الدخول برقم الهاتف إلزامي ومفعّل من الإدارة لاستخدام محرك البحث.',
+          requirePhoneLogin: true
+        });
+      }
+
+      // If phone login is not required and user has not been initialized yet, auto-assign guest user
+      if (!user && !settings.requirePhoneLogin && deviceId) {
+        user = await DbService.getOrCreateGuestUser(deviceId);
+      }
+
       if (!user) {
-        return res.status(404).json({ error: 'الحساب غير موجود.' });
+        return res.status(404).json({ error: 'يرجى تسجيل الدخول أو المزامنة أولاً للمتابعة.' });
       }
 
       if (!user.isActive) {
@@ -277,8 +362,6 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
       if (!user.contactsSynced) {
         return res.status(403).json({ error: 'يجب تفعيل الحساب بمزامنة جهات الاتصال أولاً قبل استخدام البحث.' });
       }
-
-      const settings = await DbService.getSettings();
 
       // Check search balance
       if (user.searchBalance <= 0) {
@@ -369,6 +452,172 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
         points: user.points,
         totalFound: searchResults.length
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Reveal Contact Registrar (Who contributed/synced this contact name?)
+  app.post('/api/contacts/reveal-registrar', async (req, res) => {
+    const { contactId, phoneNumber, contactName, phone, userPhone, deviceId } = req.body;
+
+    try {
+      let contact: Contact | undefined;
+      if (contactId) {
+        contact = await DbService.getContactById(contactId);
+      }
+      
+      // Fallback lookup if ID changed or wasn't matched directly
+      if (!contact && phoneNumber) {
+        const matches = await DbService.queryContactsByPhone(phoneNumber, 50);
+        if (contactName) {
+          contact = matches.find(m => m.contactName === contactName) || matches[0];
+        } else {
+          contact = matches[0];
+        }
+      }
+
+      if (!contact) {
+        return res.status(404).json({ error: 'جهة الاتصال غير موجودة في قاعدة البيانات.' });
+      }
+
+      const settings = await DbService.getSettings();
+
+      // Check if feature is globally allowed for all users
+      if (settings.allowRevealRegistrarGlobal) {
+        return res.json({
+          allowed: true,
+          isGlobal: true,
+          registrar: contact.addedByUser || 'مزامنة عامة',
+          createdAt: contact.createdAt || 'سابق'
+        });
+      }
+
+      // Otherwise, check user subscription / plan
+      const targetPhone = userPhone || phone;
+      let user: User | undefined;
+      if (targetPhone && !targetPhone.startsWith('زائر')) {
+        user = await DbService.getUserByPhone(targetPhone);
+      }
+      if (!user && deviceId) {
+        user = await DbService.getUserById(`guest_${deviceId}`) || await DbService.getUserByDeviceId(deviceId);
+      }
+
+      const hasPlan = Boolean(user && user.canRevealRegistrar);
+      const limit = user?.revealRegistrarLimit ?? 0;
+      const used = user?.revealRegistrarUsed ?? 0;
+      const remaining = Math.max(0, limit - used);
+
+      if (!hasPlan || remaining <= 0) {
+        return res.status(403).json({
+          allowed: false,
+          reason: 'subscription_required',
+          error: 'subscription_required',
+          message: 'معرفة مسجّل هذا الرقم متاح حصرياً للمشتركين في باقات كاشف المسجّل أو بتصريح خاص من الإدارة.',
+          adminPhone: settings.adminPhone || '774919194'
+        });
+      }
+
+      // Deduct 1 from user's reveal limit
+      if (user) {
+        user.revealRegistrarUsed = used + 1;
+        await DbService.saveUser(user);
+      }
+
+      return res.json({
+        allowed: true,
+        isGlobal: false,
+        registrar: contact.addedByUser || 'مزامنة عامة',
+        createdAt: contact.createdAt || 'سابق',
+        remaining: remaining - 1,
+        used: used + 1,
+        limit
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Delete Contact Name (VIP feature: Hide/delete unwanted name from caller-ID database)
+  app.post('/api/contacts/delete-name', async (req, res) => {
+    const { contactId, phoneNumber, contactName, phone, userPhone, deviceId } = req.body;
+
+    if (!phoneNumber || !contactName) {
+      return res.status(400).json({ error: 'مطلوب تحديد رقم الهاتف واسم جهة الاتصال لحذفها.' });
+    }
+
+    try {
+      const settings = await DbService.getSettings();
+      const targetPhone = userPhone || phone;
+
+      let user: User | undefined;
+      if (targetPhone && !targetPhone.startsWith('زائر')) {
+        user = await DbService.getUserByPhone(targetPhone);
+      }
+      if (!user && deviceId) {
+        user = await DbService.getUserById(`guest_${deviceId}`) || await DbService.getUserByDeviceId(deviceId);
+      }
+
+      // Check if deletion is globally enabled by admin
+      const isGlobal = Boolean(settings.allowDeleteNamesGlobal);
+
+      if (!isGlobal) {
+        const hasPlan = Boolean(user && user.canDeleteNames);
+        const limit = user?.nameDeletionsLimit ?? 0;
+        const used = user?.nameDeletionsUsed ?? 0;
+        const remaining = Math.max(0, limit - used);
+
+        if (!hasPlan || remaining <= 0) {
+          return res.status(403).json({
+            allowed: false,
+            reason: 'subscription_required',
+            error: 'subscription_required',
+            message: 'ميزة حذف وتعديل الأسماء من قاعدة البيانات متاحة حصرياً للمشتركين في باقات VIP أو بتصريح خاص من الإدارة.',
+            adminPhone: settings.adminPhone || '774919194'
+          });
+        }
+      }
+
+      // Execute deletion
+      const userIdentifier = user?.phone || (deviceId ? `جهاز_${deviceId}` : 'مستخدم_عام');
+      const result = await DbService.deleteContactName(phoneNumber, contactName, userIdentifier, contactId);
+
+      // Decrement quota if user account exists
+      if (user && !isGlobal) {
+        user.nameDeletionsUsed = (user.nameDeletionsUsed || 0) + 1;
+        await DbService.saveUser(user);
+
+        // Record Transaction
+        await DbService.addTransaction({
+          userId: user.id,
+          userPhone: user.phone,
+          action: `حذف الاسم (${contactName}) للرقم: ${phoneNumber}`,
+          amount: -1
+        });
+      }
+
+      const limit = user?.nameDeletionsLimit ?? 0;
+      const used = user?.nameDeletionsUsed ?? 0;
+
+      res.json({
+        success: true,
+        message: `تم حذف الاسم (${contactName}) بنجاح من قاعدة البيانات ومنع ظهوره في نتائج البحث.`,
+        deletedCount: result.deletedCount,
+        remaining: Math.max(0, limit - used),
+        used,
+        limit,
+        user
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Public: Get all active VIP Plans
+  app.get('/api/vip-plans', async (req, res) => {
+    try {
+      const plans = await DbService.getVipPlans();
+      res.json(plans);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -657,6 +906,136 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
     }
   });
 
+  // Admin: Update user's VIP plan, balances, & profile settings
+  app.post('/api/admin/users/plan', adminAuthMiddleware, async (req, res) => {
+    const { 
+      userId, 
+      canRevealRegistrar, 
+      revealRegistrarLimit, 
+      revealRegistrarUsed,
+      canDeleteNames,
+      nameDeletionsLimit,
+      nameDeletionsUsed,
+      points,
+      searchBalance,
+      isActive,
+      unlockedUnlimited,
+      contactsSynced
+    } = req.body;
+
+    try {
+      const user = await DbService.getUserById(userId);
+      if (!user) {
+        return res.status(404).json({ error: 'المستخدم غير موجود.' });
+      }
+
+      if (typeof canRevealRegistrar === 'boolean') {
+        user.canRevealRegistrar = canRevealRegistrar;
+      }
+      if (typeof revealRegistrarLimit === 'number') {
+        user.revealRegistrarLimit = revealRegistrarLimit;
+      }
+      if (typeof revealRegistrarUsed === 'number') {
+        user.revealRegistrarUsed = revealRegistrarUsed;
+      }
+
+      if (typeof canDeleteNames === 'boolean') {
+        user.canDeleteNames = canDeleteNames;
+      }
+      if (typeof nameDeletionsLimit === 'number') {
+        user.nameDeletionsLimit = nameDeletionsLimit;
+      }
+      if (typeof nameDeletionsUsed === 'number') {
+        user.nameDeletionsUsed = nameDeletionsUsed;
+      }
+
+      if (typeof points === 'number') {
+        user.points = points;
+      }
+      if (typeof searchBalance === 'number') {
+        user.searchBalance = searchBalance;
+      }
+      if (typeof isActive === 'boolean') {
+        user.isActive = isActive;
+      }
+      if (typeof unlockedUnlimited === 'boolean') {
+        user.unlockedUnlimited = unlockedUnlimited;
+      }
+      if (typeof contactsSynced === 'boolean') {
+        user.contactsSynced = contactsSynced;
+      }
+
+      await DbService.saveUser(user);
+      res.json({ message: 'تم حفظ وتحديث ملف وصلاحيات المستخدم بنجاح.', user });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Get all deleted names history
+  app.get('/api/admin/deleted-names', adminAuthMiddleware, async (req, res) => {
+    try {
+      const records = await DbService.getDeletedNameRecords();
+      res.json(records);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Restore a deleted name back to search results
+  app.post('/api/admin/restore-name', adminAuthMiddleware, async (req, res) => {
+    const { recordId } = req.body;
+    if (!recordId) {
+      return res.status(400).json({ error: 'مطلوب معرف سجل الحذف.' });
+    }
+    try {
+      const success = await DbService.restoreDeletedNameRecord(recordId);
+      if (success) {
+        res.json({ message: 'تم استعادة الاسم وإعادة إتاحته في نتائج البحث بنجاح!' });
+      } else {
+        res.status(404).json({ error: 'سجل الحذف غير موجود أو تم استعادته مسبقاً.' });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Single or Bulk Action on Deleted Names ('restore' | 'rehide' | 'delete_log')
+  app.post('/api/admin/deleted-names/action', adminAuthMiddleware, async (req, res) => {
+    const { recordIds, action } = req.body as {
+      recordIds?: string[];
+      action?: 'restore' | 'rehide' | 'delete_log';
+    };
+
+    if (!Array.isArray(recordIds) || recordIds.length === 0 || !action) {
+      return res.status(400).json({ error: 'يرجى تحديد السجلات ونوع الإجراء المطلوب تنفيذه.' });
+    }
+
+    if (!['restore', 'rehide', 'delete_log'].includes(action)) {
+      return res.status(400).json({ error: 'نوع الإجراء غير صالح.' });
+    }
+
+    try {
+      const result = await DbService.bulkActionDeletedNameRecords(recordIds, action);
+      if (!result.success) {
+        return res.status(404).json({ error: 'لم يتم العثور على السجلات المحددة أو تعذر تنفيذ الإجراء.' });
+      }
+
+      const actionMessages: Record<'restore' | 'rehide' | 'delete_log', string> = {
+        restore: `تم تفعيل واستعادة (${result.processedCount}) اسم للظهور في نتائج البحث بنجاح!`,
+        rehide: `تم إعادة إخفاء وتعطيل (${result.processedCount}) اسم من نتائج البحث بنجاح!`,
+        delete_log: `تم مسح (${result.processedCount}) سجل من قائمة المحذوفات نهائياً!`
+      };
+
+      res.json({
+        message: actionMessages[action],
+        processedCount: result.processedCount
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Database Management: List and search contacts (fetches full real database)
   app.get('/api/admin/contacts', adminAuthMiddleware, async (req, res) => {
     const { search } = req.query as { search?: string };
@@ -833,6 +1212,25 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
     try {
       await DbService.saveSettings(newSettings);
       res.json({ message: 'تم تحديث إعدادات نظام معروف بنجاح دون الحاجة لإعادة البرمجة.', settings: newSettings });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin VIP Plans Management
+  app.post('/api/admin/vip-plans', adminAuthMiddleware, async (req, res) => {
+    try {
+      const plan = await DbService.saveVipPlan(req.body);
+      res.json({ message: 'تم حفظ وتحديث باقة VIP بنجاح!', plan });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/admin/vip-plans/:id', adminAuthMiddleware, async (req, res) => {
+    try {
+      await DbService.deleteVipPlan(req.params.id);
+      res.json({ message: 'تم حذف باقة VIP بنجاح!' });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

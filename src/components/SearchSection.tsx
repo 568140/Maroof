@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Info, Users, Database, ShieldAlert, Coins, Copy, Check, RefreshCw, Star, AlertTriangle, ArrowRight, Eye, Play, Clock, Sparkles, X, Activity } from 'lucide-react';
-import { User, Contact, Ad, PlatformMetrics } from '../types';
+import { Search, Info, Users, Database, ShieldAlert, Coins, Copy, Check, RefreshCw, Star, AlertTriangle, ArrowRight, Eye, Play, Clock, Sparkles, X, Activity, Award, MessageCircle, Lock, Crown, Trash2 } from 'lucide-react';
+import { User, Contact, Ad, PlatformMetrics, SystemSettings, VipPlan } from '../types';
 import { APP_LOGO } from '../assets/logoBase64';
 import { registerBackHandler } from '../utils/backNavigation';
 
 interface SearchSectionProps {
   currentUser: User | null;
+  systemSettings?: SystemSettings;
   onSearch: (query: string, type: 'standard' | 'advanced') => Promise<{ results: Contact[]; advanced?: boolean; outOfBalance?: boolean; insufficientPoints?: boolean }>;
   setActiveTab: (tab: string) => void;
   onOpenAuth: () => void;
@@ -51,6 +52,7 @@ function useAnimatedCounter(targetValue: number, duration: number = 2400) {
 
 export default function SearchSection({
   currentUser,
+  systemSettings,
   onSearch,
   setActiveTab,
   onOpenAuth,
@@ -70,6 +72,18 @@ export default function SearchSection({
   });
   const [hasSearched, setHasSearched] = useState(false);
   const [errorState, setErrorState] = useState<string | null>(null);
+
+  // Reveal Registrar (من سجّل هذا الاسم؟) State
+  const [revealedRegistrars, setRevealedRegistrars] = useState<Record<string, { registrar: string; createdAt: string; remaining?: number; isGlobal?: boolean }>>({});
+  const [revealingContactId, setRevealingContactId] = useState<string | null>(null);
+  const [vipModalOpen, setVipModalOpen] = useState(false);
+  const [targetContactForVip, setTargetContactForVip] = useState<Contact | null>(null);
+  const [vipPlans, setVipPlans] = useState<VipPlan[]>([]);
+  const [selectedModalPlanId, setSelectedModalPlanId] = useState<string>('plan_pro');
+  const [vipActionType, setVipActionType] = useState<'reveal' | 'delete'>('reveal');
+  const [deletingContact, setDeletingContact] = useState<Contact | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Dynamic Platform Real-Time Metrics State (Base + Real Firestore Data)
   const [platformMetrics, setPlatformMetrics] = useState<PlatformMetrics>({
@@ -112,6 +126,21 @@ export default function SearchSection({
       window.removeEventListener('maarouf:metrics-updated', onMetricsUpdated);
     };
   }, [fetchLiveMetrics]);
+
+  // Fetch active VIP plans for package selection in modal
+  useEffect(() => {
+    fetch('/api/vip-plans')
+      .then(r => r.json())
+      .then((data: VipPlan[]) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const activeOnly = data.filter(p => p.isActive);
+          setVipPlans(activeOnly);
+          const defaultPlan = activeOnly.find(p => p.id.includes('pro')) || activeOnly[0];
+          if (defaultPlan) setSelectedModalPlanId(defaultPlan.id);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Helper to map and sanitize raw search results from backend structure
   const mapRawResults = (raw: any[]): Contact[] => {
@@ -256,9 +285,16 @@ export default function SearchSection({
     e.preventDefault();
     setErrorState(null);
 
-    if (!currentUser) {
-      showToast('يرجى تسجيل الدخول أولاً للبحث.', 'warning');
+    const requirePhone = systemSettings?.requirePhoneLogin ?? true;
+    if (requirePhone && (!currentUser || currentUser.isGuest)) {
+      showToast('يرجى تسجيل الدخول برقم هاتفك أولاً للبحث.', 'warning');
       onOpenAuth();
+      return;
+    }
+
+    if (currentUser && !currentUser.contactsSynced) {
+      showToast('يجب عليك مزامنة جهات اتصال هاتفك أولاً لتفعيل محرك البحث.', 'warning');
+      setActiveTab('sync');
       return;
     }
 
@@ -316,6 +352,147 @@ export default function SearchSection({
     if (freq >= 100) return 98;
     if (freq >= 50) return Math.min(95, 75 + Math.floor(freq / 3));
     return Math.min(70, 30 + freq * 2);
+  };
+
+  // Reveal Registrar Handler: checks global setting or user plan quota
+  const handleRevealRegistrar = async (contact: Contact) => {
+    setTargetContactForVip(contact);
+    setVipActionType('reveal');
+
+    const contactKey = contact.id || `${contact.phoneNumber}_${contact.contactName}`;
+
+    if (revealedRegistrars[contactKey]) {
+      showToast(`تم الكشف مسبقاً: سجّله الحساب ${revealedRegistrars[contactKey].registrar}`, 'info');
+      return;
+    }
+
+    const isGlobal = Boolean(systemSettings?.allowRevealRegistrarGlobal);
+    const hasActivePlan = Boolean(currentUser && currentUser.canRevealRegistrar && ((currentUser.revealRegistrarLimit || 0) > (currentUser.revealRegistrarUsed || 0)));
+
+    // If neither global nor subscribed, open VIP Package modal immediately with 0 delay
+    if (!isGlobal && !hasActivePlan) {
+      setVipModalOpen(true);
+      return;
+    }
+
+    try {
+      setRevealingContactId(contactKey);
+      const token = localStorage.getItem('maarouf_token') || '';
+      const res = await fetch('/api/contacts/reveal-registrar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          contactId: contact.id,
+          phoneNumber: searchedNum || contact.phoneNumber,
+          contactName: contact.contactName,
+          phone: currentUser?.phone,
+          deviceId: currentUser?.deviceId
+        })
+      });
+
+      const data = await res.json();
+      if (res.status === 403 || data.error === 'subscription_required' || data.reason === 'subscription_required') {
+        setVipModalOpen(true);
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(data.error || 'فشل كشف مسجّل الاسم');
+      }
+
+      setRevealedRegistrars(prev => ({
+        ...prev,
+        [contactKey]: {
+          registrar: data.registrar,
+          createdAt: data.createdAt,
+          remaining: data.remaining,
+          isGlobal: data.isGlobal
+        }
+      }));
+
+      if (data.isGlobal) {
+        showToast(`تم الكشف: سجّله في هاتفه الحساب ${data.registrar} (متاح مجاناً للجميع)`, 'success');
+      } else {
+        showToast(`تم الكشف بنجاح! الرصيد المتبقي لباقة VIP: ${data.remaining} عملية`, 'success');
+      }
+
+      if (onRefreshUser) {
+        await onRefreshUser();
+      }
+    } catch (err: any) {
+      showToast(err.message || 'حدث خطأ أثناء كشف مسجّل الاسم', 'error');
+    } finally {
+      setRevealingContactId(null);
+    }
+  };
+
+  // Delete Contact Name Handler: checks if user has active name deletion quota
+  const handleDeleteContactClick = (contact: Contact) => {
+    setTargetContactForVip(contact);
+    setVipActionType('delete');
+
+    const isGlobal = Boolean(systemSettings?.allowDeleteNamesGlobal);
+    const hasActiveDeletePlan = Boolean(currentUser && currentUser.canDeleteNames && ((currentUser.nameDeletionsLimit || 0) > (currentUser.nameDeletionsUsed || 0)));
+
+    if (!isGlobal && !hasActiveDeletePlan) {
+      // Find a plan with nameDeletionsCount > 0 or default to plan_delete_shield / plan_pro
+      const deletePlan = vipPlans.find(p => (p.nameDeletionsCount || 0) > 0) || vipPlans[0];
+      if (deletePlan) {
+        setSelectedModalPlanId(deletePlan.id);
+      }
+      setVipModalOpen(true);
+      return;
+    }
+
+    // Has quota or is global: prompt confirmation dialog
+    setDeletingContact(contact);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingContact) return;
+
+    try {
+      setIsDeleting(true);
+      const res = await fetch('/api/contacts/delete-name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contactId: deletingContact.id,
+          phoneNumber: searchedNum || deletingContact.phoneNumber,
+          contactName: deletingContact.contactName,
+          phone: currentUser?.phone,
+          deviceId: currentUser?.deviceId
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 403 || data.error === 'subscription_required') {
+          setDeleteConfirmOpen(false);
+          setVipModalOpen(true);
+          return;
+        }
+        throw new Error(data.error || 'فشل حذف الاسم');
+      }
+
+      // Immediately filter out the deleted contact from results in local state
+      setResults(prev => prev.filter(c => c.contactName !== deletingContact.contactName));
+      setDeleteConfirmOpen(false);
+      showToast(data.message || 'تم حذف الاسم نهائياً من قاعدة البيانات!', 'success');
+
+      if (onRefreshUser) {
+        await onRefreshUser();
+      }
+    } catch (err: any) {
+      showToast(err.message || 'حدث خطأ أثناء محاولة حذف الاسم.', 'error');
+    } finally {
+      setIsDeleting(false);
+      setDeletingContact(null);
+    }
   };
 
   return (
@@ -437,9 +614,13 @@ export default function SearchSection({
           <div className="mt-4 p-3 bg-red-950/20 border border-red-500/20 rounded-xl text-right flex items-start gap-2.5">
             <ShieldAlert className="w-4.5 h-4.5 text-red-400 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <h4 className="text-red-300 text-xs font-bold">الحساب غير مفعل حالياً!</h4>
+              <h4 className="text-red-300 text-xs font-bold">
+                {currentUser.isGuest ? 'مطلوب مزامنة دفتر الهاتف للبدء بالبحث' : 'الحساب غير مفعل حالياً!'}
+              </h4>
               <p className="text-gray-400 text-[10px] mt-0.5">
-                طبقاً لسياسات المنصة، يجب عليك مزامنة جهات اتصالك أولاً لمنحك صلاحيات البحث والمساعدة في بناء الدليل المجتمعي.
+                {currentUser.isGuest
+                  ? 'يمكنك البحث مجاناً بمجرد الضغط على مزامنة جهات اتصال هاتفك لمنع التكرار وتفعيل محرك البحث.'
+                  : 'طبقاً لسياسات المنصة، يجب عليك مزامنة جهات اتصالك أولاً لمنحك صلاحيات البحث والمساعدة في بناء الدليل المجتمعي.'}
               </p>
               <button
                 onClick={() => setActiveTab('sync')}
@@ -490,31 +671,90 @@ export default function SearchSection({
               <div className="space-y-3">
                 <p className="text-slate-300 text-xs pb-1">الأسماء الأكثر شيوعاً المرتبطة بالرقم:</p>
                 <div className="space-y-2">
-                  {results.map((item, index) => (
-                    <div
-                      key={item.id || index}
-                      className="group flex items-center justify-between p-3.5 rounded-2xl bg-[#020b24]/60 border border-[#0d52ff]/30 hover:border-[#ffcc00]/60 hover:bg-[#0d52ff]/10 transition-all shadow-sm"
-                    >
-                      {/* Copy Action & Percentage */}
-                      <div className="flex items-center gap-3">
-                        <span className="text-[#ffcc00] font-black text-xs font-mono">{calculatePercentage(item.frequency)}%</span>
-                        <button
-                          onClick={() => handleCopyText(item.contactName, index)}
-                          className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/5 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                        >
-                          {copiedIndex === index ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
+                  {results.map((item, index) => {
+                    const itemKey = item.id || `${item.phoneNumber}_${item.contactName}`;
+                    const isRevealed = !!revealedRegistrars[itemKey];
+                    const revealedData = revealedRegistrars[itemKey];
+                    const isRevealing = revealingContactId === itemKey;
 
-                      {/* Name Details */}
-                      <div className="flex items-center gap-3">
-                        <span className="text-white font-bold text-sm">{item.contactName}</span>
-                        <span className="w-6 h-6 rounded-full bg-[#1e295d] border border-[#c5a059]/20 flex items-center justify-center text-xs text-[#e5c158] font-mono">
-                          {index + 1}
-                        </span>
+                    return (
+                      <div
+                        key={item.id || index}
+                        className="p-3.5 rounded-2xl bg-[#020b24]/80 border border-[#0d52ff]/30 hover:border-[#ffcc00]/60 transition-all shadow-sm space-y-2.5"
+                      >
+                        <div className="group flex items-center justify-between">
+                          {/* Copy Action & Percentage */}
+                          <div className="flex items-center gap-3">
+                            <span className="text-[#ffcc00] font-black text-xs font-mono">{calculatePercentage(item.frequency)}%</span>
+                            <button
+                              onClick={() => handleCopyText(item.contactName, index)}
+                              className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/5 transition-colors"
+                              title="نسخ الاسم"
+                            >
+                              {copiedIndex === index ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+
+                          {/* Name Details */}
+                          <div className="flex items-center gap-3">
+                            <span className="text-white font-bold text-sm">{item.contactName}</span>
+                            <span className="w-6 h-6 rounded-full bg-[#1e295d] border border-[#c5a059]/20 flex items-center justify-center text-xs text-[#e5c158] font-mono">
+                              {index + 1}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Who Saved/Registered This Name & Delete Action */}
+                        <div className="pt-2 border-t border-white/5 space-y-2">
+                          {isRevealed && revealedData && (
+                            <div className="bg-gradient-to-r from-purple-950/40 via-indigo-950/30 to-purple-950/40 border border-purple-500/30 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 text-xs text-purple-200">
+                                <Award className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                                <span>سجّله في هاتفه الحساب:</span>
+                                <span className="font-mono font-bold text-white bg-black/60 px-2 py-0.5 rounded border border-purple-400/40" dir="ltr">
+                                  {revealedData.registrar}
+                                </span>
+                              </div>
+                              {revealedData.createdAt && (
+                                <span className="text-[10px] text-gray-400 font-mono">
+                                  بتاريخ: {revealedData.createdAt.split('T')[0]}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteContactClick(item)}
+                              className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/40 hover:border-rose-600 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer shadow-sm"
+                              title="حذف هذا الاسم نهائياً من قاعدة البيانات ومنع ظهوره في نتائج البحث"
+                            >
+                              <Trash2 className="w-3 h-3 text-rose-400" />
+                              <span>حذف هذا الاسم 🗑️</span>
+                            </button>
+
+                            {!isRevealed && (
+                              <button
+                                type="button"
+                                onClick={() => handleRevealRegistrar(item)}
+                                disabled={isRevealing}
+                                className="px-3 py-1 text-[11px] font-bold rounded-lg bg-gradient-to-r from-purple-600/30 to-indigo-600/30 hover:from-purple-600/50 hover:to-indigo-600/50 text-purple-200 border border-purple-500/40 hover:border-purple-400 flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-60 cursor-pointer shadow-sm"
+                                title="معرفة رقم الحساب الذي قام بتسجيل وتزامن جهة الاتصال هذه"
+                              >
+                                {isRevealing ? (
+                                  <RefreshCw className="w-3 h-3 animate-spin text-purple-300" />
+                                ) : (
+                                  <Award className="w-3 h-3 text-purple-400" />
+                                )}
+                                <span>من سجّل هذا الاسم؟ 🔍</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {results.length >= 3 && (
@@ -791,6 +1031,326 @@ export default function SearchSection({
               </button>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* DELETE CONFIRMATION MODAL FOR SUBSCRIBED USERS */}
+      <AnimatePresence>
+        {deleteConfirmOpen && deletingContact && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-y-auto" dir="rtl">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-md overflow-hidden rounded-3xl border-2 border-rose-500/50 bg-gradient-to-b from-[#2a0c16] via-[#15070d] to-[#070204] p-6 text-right shadow-[0_20px_70px_rgba(244,63,94,0.35)] space-y-4"
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-rose-500/20">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteConfirmOpen(false);
+                    setDeletingContact(null);
+                  }}
+                  className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    تأكيد حذف الاسم
+                  </span>
+                  <Trash2 className="w-5 h-5 text-rose-400" />
+                </div>
+              </div>
+
+              <div className="text-center space-y-2">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-rose-600 to-red-600 border-2 border-rose-400/50 flex items-center justify-center mx-auto shadow-lg shadow-rose-600/30">
+                  <Trash2 className="w-7 h-7 text-white" />
+                </div>
+                <h3 className="text-white text-base md:text-lg font-black leading-snug">
+                  هل أنت متأكد من رغبتك في حذف هذا الاسم؟
+                </h3>
+                <p className="text-rose-200/80 text-xs leading-relaxed">
+                  سيتم حذف الاسم وإخفاؤه نهائياً من نتائج البحث وقاعدة البيانات للرقم المعني، وحظر إعادة مزامنته مستقبلاً.
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-black/60 border border-rose-500/30 text-center space-y-1">
+                <span className="text-[10px] text-gray-400 block">تفاصيل الاسم المستهدف للحذف:</span>
+                <div className="text-yellow-300 font-black text-base">
+                  «{deletingContact.contactName}»
+                </div>
+                <div className="text-gray-400 text-xs font-mono" dir="ltr">
+                  رقم الهاتف: {searchedNum || deletingContact.phoneNumber}
+                </div>
+              </div>
+
+              {currentUser && !systemSettings?.allowDeleteNamesGlobal && (
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-rose-950/40 border border-rose-500/20 text-xs text-rose-200">
+                  <span>الرصيد المتاح لعمليات الحذف:</span>
+                  <span className="font-mono font-bold text-yellow-300">
+                    {Math.max(0, (currentUser.nameDeletionsLimit || 0) - (currentUser.nameDeletionsUsed || 0))} عملية متبقية
+                  </span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="flex-1 py-3 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-black text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer active:scale-95"
+                >
+                  {isDeleting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>جارٍ الحذف والتطبيق...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>نعم، حذف الاسم نهائياً</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteConfirmOpen(false);
+                    setDeletingContact(null);
+                  }}
+                  disabled={isDeleting}
+                  className="px-5 py-3 bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold rounded-xl border border-white/5 transition-all cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* VIP UPGRADE MODAL FOR REVEAL REGISTRAR & NAME DELETIONS WITH PACKAGE SELECTOR */}
+      <AnimatePresence>
+        {vipModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 overflow-y-auto" dir="rtl">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-lg overflow-hidden rounded-3xl border-2 border-purple-500/40 bg-gradient-to-b from-[#160c33] via-[#0c122b] to-[#060a17] p-5 sm:p-6 text-right shadow-[0_20px_70px_rgba(147,51,234,0.35)] space-y-4 my-8"
+            >
+              {/* Glowing decorative backdrop */}
+              <div className="absolute -top-20 -right-20 w-44 h-44 bg-purple-600/20 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-20 -left-20 w-44 h-44 bg-[#e5c158]/15 rounded-full blur-3xl pointer-events-none" />
+
+              {/* Close Button & Badge */}
+              <div className="flex items-center justify-between pb-2 border-b border-purple-500/20">
+                <button
+                  type="button"
+                  onClick={() => setVipModalOpen(false)}
+                  className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    باقة كبار الشخصيات VIP
+                  </span>
+                  <Crown className="w-5 h-5 text-yellow-400" />
+                </div>
+              </div>
+
+              {/* Icon & Title */}
+              <div className="text-center space-y-1.5">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 border-2 border-purple-400/50 flex items-center justify-center mx-auto shadow-lg shadow-purple-600/30">
+                  {vipActionType === 'delete' ? (
+                    <Trash2 className="w-7 h-7 text-white" />
+                  ) : (
+                    <Award className="w-7 h-7 text-white" />
+                  )}
+                </div>
+                <h3 className="text-white text-base md:text-lg font-black leading-snug">
+                  {vipActionType === 'delete'
+                    ? 'خدمة «حذف وإخفاء الأسماء من قاعدة البيانات» VIP 🛡️'
+                    : 'خدمة «كاشف مسجّل الأرقام والأسماء» VIP 👑'}
+                </h3>
+                <p className="text-purple-200/80 text-xs">
+                  {vipActionType === 'delete'
+                    ? 'إزالة الأسماء غير المرغوبة نهائياً من نتائج البحث وقاعدة البيانات وحظر إعادة مزامنتها'
+                    : 'معرفة صاحب الحساب ورقم الهاتف الذي قام بحفظ هذا الاسم في هاتفه ومزامنته في المنصة'}
+                </p>
+              </div>
+
+              {/* Target info preview */}
+              {targetContactForVip && (
+                <div className="p-2.5 rounded-xl bg-black/40 border border-purple-500/30 text-center space-y-0.5">
+                  <span className="text-[10px] text-gray-400 block">
+                    {vipActionType === 'delete' ? 'الاسم المطلوب حذفه وإخفاؤه:' : 'الاسم المراد معرفة من سجّله:'}
+                  </span>
+                  <div className="flex items-center justify-center gap-2 font-bold text-sm">
+                    <span className="text-yellow-300 font-bold">«{targetContactForVip.contactName}»</span>
+                    <span className="text-gray-400 text-xs font-mono" dir="ltr">({searchedNum || targetContactForVip.phoneNumber})</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Package Selection Area */}
+              <div className="space-y-2">
+                <span className="text-white text-xs font-bold block flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
+                  <span>اختر الباقة المناسبة لك للاشتراك والتفعيل الفوري:</span>
+                </span>
+
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {(vipPlans.length > 0 ? vipPlans : [
+                    {
+                      id: 'plan_starter',
+                      name: 'باقة البداية (Starter VIP)',
+                      priceYmr: 2500,
+                      priceUsd: 5,
+                      revealsCount: 10,
+                      nameDeletionsCount: 1,
+                      description: '10 عمليات كشف مسجّل + حذف اسم واحد',
+                      badge: 'بداية مثالية',
+                      features: ['10 عمليات كشف مؤكدة', 'حذف اسم واحد'],
+                      isActive: true
+                    },
+                    {
+                      id: 'plan_pro',
+                      name: 'باقة المحترفين (Pro VIP)',
+                      priceYmr: 5000,
+                      priceUsd: 10,
+                      revealsCount: 35,
+                      nameDeletionsCount: 3,
+                      description: '35 عملية كشف مسجّل + حذف حتى 3 أسماء',
+                      badge: 'الأكثر طلباً ⭐',
+                      features: ['35 عملية كشف دقيقة', 'حذف 3 أسماء'],
+                      isActive: true
+                    },
+                    {
+                      id: 'plan_elite',
+                      name: 'باقة النخبة الشاملة (Elite VIP)',
+                      priceYmr: 12000,
+                      priceUsd: 20,
+                      revealsCount: 100,
+                      nameDeletionsCount: 10,
+                      description: '100 عملية كشف + حذف 10 أسماء مع دعم 24/7',
+                      badge: 'أفضل قيمة 👑',
+                      features: ['100 عملية كشف', 'حذف 10 أسماء'],
+                      isActive: true
+                    }
+                  ]).map((p) => {
+                    const isSelected = selectedModalPlanId === p.id;
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => setSelectedModalPlanId(p.id)}
+                        className={`p-3 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                          isSelected
+                            ? 'bg-purple-950/60 border-purple-400 shadow-[0_0_20px_rgba(168,85,247,0.3)]'
+                            : 'bg-black/40 border-white/5 hover:border-white/20'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="radio"
+                            name="vipPlanSelect"
+                            checked={isSelected}
+                            onChange={() => setSelectedModalPlanId(p.id)}
+                            className="accent-purple-400 w-4 h-4"
+                          />
+                          <div className="space-y-0.5 text-right">
+                            <div className="flex items-center gap-2">
+                              <span className="text-white text-xs font-bold">{p.name}</span>
+                              {p.badge && (
+                                <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
+                                  {p.badge}
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-gray-300 block">{p.description}</span>
+                          </div>
+                        </div>
+
+                        <div className="text-left shrink-0">
+                          <div className="text-yellow-400 font-mono font-black text-sm">
+                            {p.priceYmr.toLocaleString('ar-EG')} <span className="text-[10px] text-yellow-200">ريال</span>
+                          </div>
+                          <div className="text-[9px] text-purple-300 font-mono space-y-0.5">
+                            {p.revealsCount > 0 && <div>{p.revealsCount} كشف</div>}
+                            {(p.nameDeletionsCount || 0) > 0 && <div className="text-rose-300 font-bold">{p.nameDeletionsCount} حذف اسم 🛡️</div>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Selected Plan Summary & WhatsApp Call-To-Action */}
+              {(() => {
+                const activePlans = vipPlans.length > 0 ? vipPlans : [
+                  { id: 'plan_starter', name: 'باقة البداية (Starter VIP)', priceYmr: 2500, priceUsd: 5, revealsCount: 10, nameDeletionsCount: 1, description: 'كشف هوية ورقم مسجّل الاسم لـ 10 عمليات + حذف اسم واحد' },
+                  { id: 'plan_pro', name: 'باقة المحترفين (Pro VIP)', priceYmr: 5000, priceUsd: 10, revealsCount: 35, nameDeletionsCount: 3, description: 'كشف هوية ورقم مسجّل الاسم لـ 35 عملية + حذف 3 أسماء' },
+                  { id: 'plan_elite', name: 'باقة النخبة الشاملة (Elite VIP)', priceYmr: 12000, priceUsd: 20, revealsCount: 100, nameDeletionsCount: 10, description: '100 عملية كشف + حذف 10 أسماء' }
+                ];
+                const activePlan = activePlans.find(p => p.id === selectedModalPlanId) || activePlans[0];
+                const adminPhoneClean = (systemSettings?.adminPhone || '774919194').replace(/^0+/, '');
+
+                const waMessage = vipActionType === 'delete'
+                  ? `السلام عليكم ورحمة الله،
+أود الاشتراك وتفعيل «${activePlan.name}» في منصة معروف لحذف اسم من قاعدة البيانات:
+• رقم حسابي: ${currentUser?.phone || 'غير مسجل'}
+• الباقة المختارة: ${activePlan.name}
+• السعر: ${activePlan.priceYmr.toLocaleString('ar-EG')} ريال يمني
+${targetContactForVip ? `• الاسم المطلوب حذفه وإخفاؤه: «${targetContactForVip.contactName}» للرقم (${searchedNum || targetContactForVip.phoneNumber})` : ''}
+يرجى تأكيد التفعيل لحسابي في منصة معروف.`
+                  : `السلام عليكم ورحمة الله،
+أود الاشتراك وتفعيل «${activePlan.name}» في منصة معروف:
+• رقم حسابي: ${currentUser?.phone || 'غير مسجل'}
+• الباقة المختارة: ${activePlan.name}
+• السعر: ${activePlan.priceYmr.toLocaleString('ar-EG')} ريال يمني
+${targetContactForVip ? `• الاستعلام المطلوب كشف مسجّله: الرقم ${searchedNum || targetContactForVip.phoneNumber} (الاسم: ${targetContactForVip.contactName})` : ''}
+يرجى تفعيل الباقة لحسابي في منصة معروف.`;
+
+                return (
+                  <div className="space-y-2 pt-1">
+                    <a
+                      href={`https://wa.me/967${adminPhoneClean}?text=${encodeURIComponent(waMessage)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-3 bg-gradient-to-r from-emerald-600 via-green-600 to-emerald-700 hover:brightness-110 text-white font-extrabold text-xs rounded-xl shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      <span>تأكيد واشتراك في «{activePlan.name}» عبر واتساب</span>
+                    </a>
+
+                    <div className="flex items-center justify-between text-xs pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVipModalOpen(false);
+                          setActiveTab('upgrade');
+                        }}
+                        className="text-purple-300 hover:text-white underline text-[11px] font-bold"
+                      >
+                        عرض صفحة باقات الترقية بالكامل ➔
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setVipModalOpen(false)}
+                        className="px-4 py-1.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white text-xs font-bold rounded-xl transition-all"
+                      >
+                        إغلاق
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

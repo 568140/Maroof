@@ -18,7 +18,7 @@ import {
   increment,
   getCountFromServer
 } from 'firebase/firestore';
-import { User, Contact, Ad, Transaction, SystemSettings, AnalyticsStats, PlatformMetrics } from './types';
+import { User, Contact, Ad, Transaction, SystemSettings, AnalyticsStats, PlatformMetrics, VipPlan, DeletedNameRecord } from './types';
 
 // Load Firebase configuration dynamically from firebase-applet-config.json or use fallback
 let firebaseConfig: any = {
@@ -62,6 +62,8 @@ const DEFAULT_SETTINGS: SystemSettings = {
   multiAccountDetection: true,
   logActivity: true,
   adminPhone: '774919194',
+  requirePhoneLogin: true,
+  allowRevealRegistrarGlobal: false,
   googleAdSenseEnabled: false,
   googleAdSenseClientId: '',
   googleAdSenseSlotId: ''
@@ -198,6 +200,36 @@ export class DbService {
     return snap.docs[0].data() as User;
   }
 
+  public static async getOrCreateGuestUser(deviceId: string, deviceType?: string, browser?: string): Promise<User> {
+    const cleanDeviceId = (deviceId || '').trim() || `dev_${Date.now()}`;
+    const guestId = `guest_${cleanDeviceId}`;
+    
+    // Check if guest user already exists in db
+    const existing = await this.getUserById(guestId);
+    if (existing) {
+      return existing;
+    }
+
+    const settings = await this.getSettings();
+    const guestUser: User = {
+      id: guestId,
+      phone: `زائر_${cleanDeviceId.slice(-6)}`,
+      deviceId: cleanDeviceId,
+      deviceType: deviceType || 'جوال ذكي',
+      browser: browser || 'تطبيق معروف',
+      verifiedStatus: false,
+      contactsSynced: false,
+      searchBalance: settings.dailySearchBalance || 3,
+      points: 0,
+      createdAt: new Date().toISOString(),
+      isActive: true,
+      isGuest: true
+    };
+
+    await setDoc(doc(db, 'users', guestId), guestUser);
+    return guestUser;
+  }
+
   public static async saveUser(user: User): Promise<User> {
     await setDoc(doc(db, 'users', user.id), user, { merge: true });
     this.clearMetricsCache();
@@ -213,20 +245,20 @@ export class DbService {
   // --- Contacts / Numbers Service ---
   public static async getContacts(): Promise<Contact[]> {
     const snap = await getDocs(collection(db, 'contacts'));
-    return snap.docs.map(doc => doc.data() as Contact);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Contact));
   }
 
   public static async getContactsLimited(limitVal: number = 100): Promise<Contact[]> {
     const q = query(collection(db, 'contacts'), limit(limitVal));
     const snap = await getDocs(q);
-    return snap.docs.map(doc => doc.data() as Contact);
+    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Contact));
   }
 
   public static async getContactById(id: string): Promise<Contact | undefined> {
     const docRef = doc(db, 'contacts', id);
     const docSnap = await getDoc(docRef);
     if (!docSnap.exists()) return undefined;
-    return docSnap.data() as Contact;
+    return { id: docSnap.id, ...docSnap.data() } as Contact;
   }
 
   public static async queryContactsByPhone(phone: string, limitVal: number = 100): Promise<Contact[]> {
@@ -314,7 +346,9 @@ export class DbService {
     );
     const snap = await getDocs(q);
 
-    const matches = snap.docs.map(doc => doc.data() as Contact);
+    const matches = snap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() } as Contact))
+      .filter(c => !c.isDeleted);
 
     // If matches are few, or we want a general search, let's also fetch exactly matched numbers.
     return matches.map(c => {
@@ -327,15 +361,50 @@ export class DbService {
   }
 
   /**
-   * Performs an optimized, real-time, highly-scalable contact synchronization.
-   * Uses a stateless zero-read mapping to execute upserts directly with merge.
-   * This completely avoids memory-heavy database scans and makes the sync immune to quota exhaustion.
+   * Performs an optimized, real-time contact synchronization with strict User & Device isolation.
+   * - Scoped strictly to the specific user (userPhone) and device fingerprint (deviceId).
+   * - Identifies existing contacts by (phoneNumber + normalized contactName).
+   * - If a number was previously synced as "علي" and is still "علي" for this user/device: SKIPPED (no redundant write).
+   * - If a number was previously synced as "علي" and the user renamed it to "جاهل": SAVED as a new contact entry.
+   * - Never mixes or compares against contacts synced by other users.
    */
-  public static async syncUserContacts(userPhone: string, contacts: { name: string; phone: string }[]): Promise<number> {
+  public static async syncUserContacts(
+    userPhone: string,
+    contacts: { name: string; phone: string }[],
+    deviceId?: string
+  ): Promise<{ addedCount: number; skippedCount: number; totalReceived: number }> {
     const cleanUserPhone = userPhone.trim();
+    const cleanDeviceId = (deviceId || '').trim();
     const yemeniRegex = /^(77|73|71|70|78)\d{7}$/;
-    
+
+    // 1. Fetch this user's existing contacts from Firestore to isolate strictly to this user
+    const existingSignatures = new Set<string>();
+    try {
+      const q = query(
+        collection(db, 'contacts'),
+        where('addedByUser', '==', cleanUserPhone)
+      );
+      const snap = await getDocs(q);
+      snap.docs.forEach(docSnap => {
+        const d = docSnap.data() as Contact;
+        if (!d.phoneNumber || !d.contactName) return;
+        const pNum = d.phoneNumber.trim();
+        const pName = d.contactName.trim().toLowerCase();
+        const pDev = (d.deviceId || cleanDeviceId).trim();
+
+        // Strict User + Device signature
+        if (cleanDeviceId) {
+          existingSignatures.add(`${cleanDeviceId}_${pNum}_${pName}`);
+        }
+        // Also add without deviceId to match contacts synced earlier before deviceId was stamped
+        existingSignatures.add(`legacy_${pNum}_${pName}`);
+      });
+    } catch (err) {
+      console.warn('[DbService] Error fetching existing contacts for diffing:', err);
+    }
+
     let addedCount = 0;
+    let skippedCount = 0;
     let batch = writeBatch(db);
     let batchOperations = 0;
 
@@ -352,13 +421,26 @@ export class DbService {
       if (num.startsWith('0')) num = num.substring(1);
 
       if (yemeniRegex.test(num)) {
-        if (seenInRequest.has(num)) continue;
-        seenInRequest.add(num);
-
         const trimmedName = item.name.trim().substring(0, 80);
-        
-        // High-performance stateless ID binding
-        const id = `c_${cleanUserPhone}_${num}`;
+        const normName = trimmedName.toLowerCase();
+        const requestItemKey = `${num}_${normName}`;
+
+        if (seenInRequest.has(requestItemKey)) continue;
+        seenInRequest.add(requestItemKey);
+
+        // Check if this exact number AND exact name was already synced for this user & device
+        const exactDevSig = cleanDeviceId ? `${cleanDeviceId}_${num}_${normName}` : '';
+        const exactLegacySig = `legacy_${num}_${normName}`;
+
+        if ((exactDevSig && existingSignatures.has(exactDevSig)) || existingSignatures.has(exactLegacySig)) {
+          // Exact duplicate: Same number AND same name for this user & device -> SKIP
+          skippedCount++;
+          continue;
+        }
+
+        // Otherwise: It is either a new number, OR the name was changed (e.g. from "علي" to "جاهل")
+        // Save as a new contact entry!
+        const id = `c_${cleanUserPhone}_${num}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         const ref = doc(db, 'contacts', id);
 
         const contactObj: Contact = {
@@ -366,13 +448,18 @@ export class DbService {
           phoneNumber: num,
           contactName: trimmedName,
           addedByUser: cleanUserPhone,
+          deviceId: cleanDeviceId || undefined,
           createdAt: new Date().toISOString(),
           frequency: 1
         };
 
-        batch.set(ref, contactObj, { merge: true });
+        batch.set(ref, contactObj);
         batchOperations++;
         addedCount++;
+
+        // Add to existing signatures so same batch doesn't insert duplicate
+        if (exactDevSig) existingSignatures.add(exactDevSig);
+        existingSignatures.add(exactLegacySig);
 
         // Commit batch when it reaches 500 operations
         if (batchOperations >= 500) {
@@ -387,9 +474,9 @@ export class DbService {
       await batch.commit();
     }
 
-    console.log(`[DbService] Stateless sync complete for user ${cleanUserPhone}. Processed: ${addedCount}`);
+    console.log(`[DbService] Differential sync complete for user ${cleanUserPhone} on device ${cleanDeviceId}. Added: ${addedCount}, Skipped: ${skippedCount}`);
     this.clearMetricsCache();
-    return addedCount;
+    return { addedCount, skippedCount, totalReceived: contacts.length };
   }
 
   public static async addContact(contact: Omit<Contact, 'id' | 'createdAt' | 'frequency'> & { frequency?: number }): Promise<Contact> {
@@ -483,6 +570,12 @@ export class DbService {
     const settings = settingsDoc.data() as SystemSettings;
     if (!settings.adminPhone) {
       settings.adminPhone = '774919194';
+    }
+    if (settings.requirePhoneLogin === undefined) {
+      settings.requirePhoneLogin = true;
+    }
+    if (settings.allowRevealRegistrarGlobal === undefined) {
+      settings.allowRevealRegistrarGlobal = false;
     }
     return settings;
   }
@@ -664,6 +757,286 @@ export class DbService {
 
     this.metricsCache = { data: metrics, timestamp: now };
     return metrics;
+  }
+
+  // --- VIP Plans Management ---
+  public static readonly DEFAULT_VIP_PLANS: VipPlan[] = [
+    {
+      id: 'plan_starter',
+      name: 'باقة البداية (Starter VIP)',
+      priceYmr: 2500,
+      priceUsd: 5,
+      revealsCount: 10,
+      nameDeletionsCount: 1,
+      planType: 'bundle',
+      durationDays: 30,
+      description: 'كشف هوية ورقم مسجّل الاسم لـ 10 عمليات + حذف اسم واحد من قاعدة البيانات',
+      badge: 'بداية مثالية',
+      features: [
+        '10 عمليات كشف هوية ورقم مسجّل الاسم',
+        'حذف أو إخفاء اسم واحد (1) من قاعدة البيانات نهائياً',
+        'معرفة توقيت وتاريخ حفظ جهة الاتصال',
+        'دعم فني واستجابة عبر واتساب الإدارة'
+      ],
+      isActive: true,
+      order: 1
+    },
+    {
+      id: 'plan_pro',
+      name: 'باقة المحترفين (Pro VIP)',
+      priceYmr: 5000,
+      priceUsd: 10,
+      revealsCount: 35,
+      nameDeletionsCount: 3,
+      planType: 'bundle',
+      durationDays: 60,
+      description: 'كشف هوية ورقم مسجّل الاسم لـ 35 عملية + حذف حتى 3 أسماء غير مرغوبة',
+      badge: 'الأكثر طلباً ⭐',
+      features: [
+        '35 عملية كشف لهويات وأرقام المسجلين',
+        'حذف وإخفاء حتى 3 أسماء غير مرغوبة من نتائج البحث',
+        'حظر إعادة مزامنة الأسماء المحذوفة للرقم',
+        'صلاحية استخدام لمدة 60 يوماً مع أولوية المعالجة'
+      ],
+      isActive: true,
+      order: 2
+    },
+    {
+      id: 'plan_elite',
+      name: 'باقة النخبة الشاملة (Elite VIP)',
+      priceYmr: 12000,
+      priceUsd: 20,
+      revealsCount: 100,
+      nameDeletionsCount: 10,
+      planType: 'bundle',
+      durationDays: 0,
+      description: '100 عملية كشف + حذف 10 أسماء مع صلاحية مفتوحة ودعم VIP مباشر',
+      badge: 'أفضل قيمة 👑',
+      features: [
+        '100 عملية كشف مسجّل الأرقام والأسماء',
+        'حذف وإخفاء حتى 10 أسماء من قاعدة البيانات وسجل البحث',
+        'بدون تاريخ انتهاء (صلاحية مفتوحة حتى نفاد الرصيد)',
+        'خط دعم مباشر مخصص 24/7 عبر واتساب الإدارة'
+      ],
+      isActive: true,
+      order: 3
+    },
+    {
+      id: 'plan_delete_shield',
+      name: 'باقة حماية الخصوصية وحذف الأسماء (Name Shield VIP)',
+      priceYmr: 3500,
+      priceUsd: 7,
+      revealsCount: 0,
+      nameDeletionsCount: 5,
+      planType: 'delete_only',
+      durationDays: 0,
+      description: 'حذف وإخفاء 5 أسماء غير مرغوبة من قاعدة البيانات ومنع ظهورها في البحث نهائياً',
+      badge: 'حماية الخصوصية 🛡️',
+      features: [
+        'حذف وإخفاء 5 أسماء من نتائج البحث للرقم',
+        'حظر إعادة مزامنة الاسم للرقم مستقبلاً',
+        'صلاحية مفتوحة ومستمرة دون قيود زمنية',
+        'تأكيد الحذف وتطبيق فوري على مستوى النظام'
+      ],
+      isActive: true,
+      order: 4
+    }
+  ];
+
+  public static async getVipPlans(): Promise<VipPlan[]> {
+    try {
+      const snap = await getDocs(collection(db, 'vipPlans'));
+      if (snap.empty) {
+        // Seed default VIP plans into Firestore
+        const batch = writeBatch(db);
+        for (const plan of this.DEFAULT_VIP_PLANS) {
+          batch.set(doc(db, 'vipPlans', plan.id), plan);
+        }
+        await batch.commit();
+        return this.DEFAULT_VIP_PLANS;
+      }
+      const plans = snap.docs.map(d => ({ id: d.id, ...d.data() } as VipPlan));
+      return plans.sort((a, b) => (a.order || 0) - (b.order || 0));
+    } catch (err) {
+      console.warn('[DbService] Error reading vipPlans from Firestore:', err);
+      return this.DEFAULT_VIP_PLANS;
+    }
+  }
+
+  public static async saveVipPlan(plan: VipPlan): Promise<VipPlan> {
+    const planId = plan.id || `plan_${Date.now()}`;
+    const cleanPlan: VipPlan = {
+      ...plan,
+      id: planId,
+      name: (plan.name || 'باقة مخصصة').trim(),
+      priceYmr: Number(plan.priceYmr) || 0,
+      priceUsd: Number(plan.priceUsd) || 0,
+      revealsCount: Number(plan.revealsCount) || 0,
+      nameDeletionsCount: Number(plan.nameDeletionsCount) || 0,
+      planType: plan.planType || 'bundle',
+      durationDays: Number(plan.durationDays) || 0,
+      description: (plan.description || '').trim(),
+      badge: (plan.badge || '').trim(),
+      features: Array.isArray(plan.features) ? plan.features.filter(Boolean) : [],
+      isActive: plan.isActive !== false,
+      order: Number(plan.order) || 1
+    };
+    await setDoc(doc(db, 'vipPlans', planId), cleanPlan, { merge: true });
+    return cleanPlan;
+  }
+
+  public static async deleteVipPlan(id: string): Promise<boolean> {
+    await deleteDoc(doc(db, 'vipPlans', id));
+    return true;
+  }
+
+  // --- Contact Name Deletion & Restoration Service ---
+  public static async deleteContactName(
+    phoneNumber: string,
+    contactName: string,
+    deletedByUserPhone: string,
+    contactId?: string
+  ): Promise<{ success: boolean; deletedCount: number; recordId: string }> {
+    const cleanNumber = (phoneNumber || '').trim().replace(/[^\d+]/g, '');
+    const cleanName = (contactName || '').trim();
+    const cleanUserPhone = (deletedByUserPhone || '').trim();
+    const nowIso = new Date().toISOString();
+    const recordId = `del_${cleanNumber}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+    // 1. Mark matching contacts in Firestore as isDeleted = true
+    let deletedCount = 0;
+    const batch = writeBatch(db);
+
+    if (contactId) {
+      const directRef = doc(db, 'contacts', contactId);
+      batch.update(directRef, {
+        isDeleted: true,
+        deletedAt: nowIso,
+        deletedByPhone: cleanUserPhone
+      });
+      deletedCount++;
+    }
+
+    // Query for any other records with same phoneNumber and contactName
+    const q = query(
+      collection(db, 'contacts'),
+      where('phoneNumber', '==', cleanNumber),
+      where('contactName', '==', cleanName),
+      limit(20)
+    );
+    const snap = await getDocs(q);
+    for (const docSnap of snap.docs) {
+      if (docSnap.id !== contactId) {
+        batch.update(doc(db, 'contacts', docSnap.id), {
+          isDeleted: true,
+          deletedAt: nowIso,
+          deletedByPhone: cleanUserPhone
+        });
+        deletedCount++;
+      }
+    }
+
+    // 2. Create DeletedNameRecord in 'deleted_contacts' collection for audit and blacklist
+    const record: DeletedNameRecord = {
+      id: recordId,
+      phoneNumber: cleanNumber,
+      contactName: cleanName,
+      deletedByPhone: cleanUserPhone,
+      deletedAt: nowIso,
+      contactId: contactId || (snap.docs[0]?.id || ''),
+      restored: false
+    };
+    batch.set(doc(db, 'deleted_contacts', recordId), record);
+
+    await batch.commit();
+    this.clearMetricsCache();
+    return { success: true, deletedCount: Math.max(1, deletedCount), recordId };
+  }
+
+  public static async getDeletedNameRecords(): Promise<DeletedNameRecord[]> {
+    try {
+      const snap = await getDocs(collection(db, 'deleted_contacts'));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as DeletedNameRecord));
+      return list.sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
+    } catch (err) {
+      console.warn('[DbService] Error reading deleted_contacts:', err);
+      return [];
+    }
+  }
+
+  public static async restoreDeletedNameRecord(recordId: string): Promise<boolean> {
+    const res = await this.bulkActionDeletedNameRecords([recordId], 'restore');
+    return res.processedCount > 0;
+  }
+
+  public static async bulkActionDeletedNameRecords(
+    recordIds: string[],
+    action: 'restore' | 'rehide' | 'delete_log'
+  ): Promise<{ success: boolean; processedCount: number }> {
+    if (!Array.isArray(recordIds) || recordIds.length === 0) {
+      return { success: false, processedCount: 0 };
+    }
+
+    let processedCount = 0;
+    const nowIso = new Date().toISOString();
+
+    for (const recordId of recordIds) {
+      try {
+        const recRef = doc(db, 'deleted_contacts', recordId);
+        const recDoc = await getDoc(recRef);
+        if (!recDoc.exists()) continue;
+        const rec = recDoc.data() as DeletedNameRecord;
+
+        const batch = writeBatch(db);
+
+        if (action === 'delete_log') {
+          batch.delete(recRef);
+          await batch.commit();
+          processedCount++;
+          continue;
+        }
+
+        const isRestore = action === 'restore';
+        batch.update(recRef, { restored: isRestore });
+
+        const q = query(
+          collection(db, 'contacts'),
+          where('phoneNumber', '==', rec.phoneNumber),
+          where('contactName', '==', rec.contactName),
+          limit(25)
+        );
+        const snap = await getDocs(q);
+        const updatedContactIds = new Set<string>();
+
+        for (const d of snap.docs) {
+          updatedContactIds.add(d.id);
+          batch.update(doc(db, 'contacts', d.id), {
+            isDeleted: !isRestore,
+            deletedAt: isRestore ? null : (rec.deletedAt || nowIso),
+            deletedByPhone: isRestore ? null : (rec.deletedByPhone || '')
+          });
+        }
+
+        if (rec.contactId && !updatedContactIds.has(rec.contactId)) {
+          const directSnap = await getDoc(doc(db, 'contacts', rec.contactId));
+          if (directSnap.exists()) {
+            batch.update(doc(db, 'contacts', rec.contactId), {
+              isDeleted: !isRestore,
+              deletedAt: isRestore ? null : (rec.deletedAt || nowIso),
+              deletedByPhone: isRestore ? null : (rec.deletedByPhone || '')
+            });
+          }
+        }
+
+        await batch.commit();
+        processedCount++;
+      } catch (err) {
+        console.error(`[DbService] Error processing deleted record ${recordId} (${action}):`, err);
+      }
+    }
+
+    this.clearMetricsCache();
+    return { success: processedCount > 0, processedCount };
   }
 }
 

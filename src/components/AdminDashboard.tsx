@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldCheck, Users, Database, Eye, TrendingUp, DollarSign, Settings, Search, Trash2, 
   UserX, UserCheck, Plus, Upload, Check, ToggleLeft, ToggleRight, Sparkles, RefreshCw, AlertTriangle, ShieldAlert, Edit3, X,
-  Download, FileSpreadsheet, Copy, ChevronLeft, ChevronRight
+  Download, FileSpreadsheet, Copy, ChevronLeft, ChevronRight, Filter, Key, Award, ExternalLink, Crown
 } from 'lucide-react';
-import { User, Contact, Ad, SystemSettings, AnalyticsStats } from '../types';
+import { User, Contact, Ad, SystemSettings, AnalyticsStats, VipPlan, DeletedNameRecord } from '../types';
 
 interface AdminDashboardProps {
   adminToken: string;
@@ -24,10 +24,34 @@ export default function AdminDashboard({
   const [users, setUsers] = useState<User[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [ads, setAds] = useState<Ad[]>([]);
+  const [deletedNames, setDeletedNames] = useState<DeletedNameRecord[]>([]);
   
   // Dashboard states
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'database' | 'ads' | 'security' | 'parameters'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'database' | 'ads' | 'security' | 'parameters' | 'plans' | 'deleted_names'>('overview');
+
+  // VIP Plans Management States
+  const [vipPlans, setVipPlans] = useState<VipPlan[]>([]);
+  const [editingPlan, setEditingPlan] = useState<VipPlan | null>(null);
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [planFormName, setPlanFormName] = useState('');
+  const [planFormPriceYmr, setPlanFormPriceYmr] = useState<number>(2500);
+  const [planFormPriceUsd, setPlanFormPriceUsd] = useState<number>(5);
+  const [planFormReveals, setPlanFormReveals] = useState<number>(10);
+  const [planFormNameDeletions, setPlanFormNameDeletions] = useState<number>(1);
+  const [planFormType, setPlanFormType] = useState<'bundle' | 'reveal_only' | 'delete_only'>('bundle');
+  const [planFormDuration, setPlanFormDuration] = useState<number>(30);
+  const [planFormDescription, setPlanFormDescription] = useState('');
+  const [planFormBadge, setPlanFormBadge] = useState('');
+  const [planFormFeaturesText, setPlanFormFeaturesText] = useState('');
+  const [savingVipPlan, setSavingVipPlan] = useState(false);
+  const [restoringRecordId, setRestoringRecordId] = useState<string | null>(null);
+
+  // Deleted Names Management States
+  const [selectedDeletedIds, setSelectedDeletedIds] = useState<string[]>([]);
+  const [deletedNamesSearch, setDeletedNamesSearch] = useState<string>('');
+  const [deletedNamesStatusFilter, setDeletedNamesStatusFilter] = useState<'all' | 'hidden' | 'restored'>('all');
+  const [bulkDeletedLoading, setBulkDeletedLoading] = useState<boolean>(false);
   
   // Selective Reset modal states
   const [resetModalOpen, setResetModalOpen] = useState(false);
@@ -36,6 +60,7 @@ export default function AdminDashboard({
   
   // Database sub-states
   const [dbSearch, setDbSearch] = useState('');
+  const [userFilter, setUserFilter] = useState<string>('all');
   const [dbPage, setDbPage] = useState(1);
   const [dbPageSize, setDbPageSize] = useState<number>(25);
   const [dbLoading, setDbLoading] = useState(false);
@@ -43,6 +68,25 @@ export default function AdminDashboard({
   const [newContactPhone, setNewContactPhone] = useState('');
   const [newContactName, setNewContactName] = useState('');
   const [bulkCsvText, setBulkCsvText] = useState('');
+
+  // User Directory Search & Filter States
+  const [userSearchQuery, setUserSearchQuery] = useState<string>('');
+  const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'vip' | 'active' | 'inactive'>('all');
+
+  // User VIP / Registrar, Name Deletion & Profile Modal States
+  const [editingPlanUser, setEditingPlanUser] = useState<User | null>(null);
+  const [planCanReveal, setPlanCanReveal] = useState<boolean>(false);
+  const [planLimit, setPlanLimit] = useState<number>(20);
+  const [planUsed, setPlanUsed] = useState<number>(0);
+  const [planCanDelete, setPlanCanDelete] = useState<boolean>(false);
+  const [planDeleteLimit, setPlanDeleteLimit] = useState<number>(5);
+  const [planDeleteUsed, setPlanDeleteUsed] = useState<number>(0);
+  const [userEditPoints, setUserEditPoints] = useState<number>(0);
+  const [userEditSearchBalance, setUserEditSearchBalance] = useState<number>(3);
+  const [userEditIsActive, setUserEditIsActive] = useState<boolean>(true);
+  const [userEditUnlockedUnlimited, setUserEditUnlockedUnlimited] = useState<boolean>(false);
+  const [userEditContactsSynced, setUserEditContactsSynced] = useState<boolean>(false);
+  const [savingPlan, setSavingPlan] = useState<boolean>(false);
 
   // Contact edit states
   const [editingContactId, setEditingContactId] = useState<string | null>(null);
@@ -75,8 +119,90 @@ export default function AdminDashboard({
     maxAccountsPerDevice: 5,
     multiAccountDetection: true,
     logActivity: true,
-    adminPhone: '774919194'
+    adminPhone: '774919194',
+    requirePhoneLogin: true,
+    allowRevealRegistrarGlobal: false,
+    allowDeleteNamesGlobal: false
   });
+
+  // Calculate unique contributors
+  const uniqueContributors = useMemo(() => {
+    const list = Array.from(new Set(contacts.map(c => c.addedByUser).filter(Boolean)));
+    return list.sort();
+  }, [contacts]);
+
+  // Filtered users list for User Directory tab
+  const filteredUsers = useMemo(() => {
+    return (users || []).filter(u => {
+      if (userStatusFilter === 'vip' && !u.canRevealRegistrar && !u.canDeleteNames) return false;
+      if (userStatusFilter === 'active' && !u.isActive) return false;
+      if (userStatusFilter === 'inactive' && u.isActive) return false;
+
+      if (!userSearchQuery.trim()) return true;
+      const q = userSearchQuery.trim().toLowerCase();
+      return (
+        (u.phone && u.phone.toLowerCase().includes(q)) ||
+        (u.deviceId && u.deviceId.toLowerCase().includes(q)) ||
+        (u.deviceType && u.deviceType.toLowerCase().includes(q)) ||
+        (u.id && u.id.toLowerCase().includes(q))
+      );
+    });
+  }, [users, userSearchQuery, userStatusFilter]);
+
+  const handleOpenPlanModal = (user: User) => {
+    setEditingPlanUser(user);
+    setPlanCanReveal(Boolean(user.canRevealRegistrar));
+    setPlanLimit(user.revealRegistrarLimit ?? 20);
+    setPlanUsed(user.revealRegistrarUsed ?? 0);
+    setPlanCanDelete(Boolean(user.canDeleteNames));
+    setPlanDeleteLimit(user.nameDeletionsLimit ?? 3);
+    setPlanDeleteUsed(user.nameDeletionsUsed ?? 0);
+    setUserEditPoints(user.points ?? 0);
+    setUserEditSearchBalance(user.searchBalance ?? 3);
+    setUserEditIsActive(user.isActive !== false);
+    setUserEditUnlockedUnlimited(Boolean(user.unlockedUnlimited));
+    setUserEditContactsSynced(Boolean(user.contactsSynced));
+  };
+
+  const handleSaveUserPlan = async () => {
+    if (!editingPlanUser) return;
+    setSavingPlan(true);
+    try {
+      const res = await fetch('/api/admin/users/plan', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': adminToken
+        },
+        body: JSON.stringify({
+          userId: editingPlanUser.id,
+          canRevealRegistrar: planCanReveal,
+          revealRegistrarLimit: Number(planLimit),
+          revealRegistrarUsed: Number(planUsed),
+          canDeleteNames: planCanDelete,
+          nameDeletionsLimit: Number(planDeleteLimit),
+          nameDeletionsUsed: Number(planDeleteUsed),
+          points: Number(userEditPoints),
+          searchBalance: Number(userEditSearchBalance),
+          isActive: userEditIsActive,
+          unlockedUnlimited: userEditUnlockedUnlimited,
+          contactsSynced: userEditContactsSynced
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('تم حفظ وتحديث ملف وصلاحيات المستخدم بنجاح.', 'success');
+        setEditingPlanUser(null);
+        fetchAdminData();
+      } else {
+        showToast(data.error || 'فشل حفظ ملف المستخدم.', 'error');
+      }
+    } catch (e) {
+      showToast('خطأ أثناء حفظ ملف المستخدم.', 'error');
+    } finally {
+      setSavingPlan(false);
+    }
+  };
 
   useEffect(() => {
     if (settings) {
@@ -90,11 +216,13 @@ export default function AdminDashboard({
     try {
       const headers = { 'x-admin-token': adminToken };
 
-      const [statsRes, usersRes, contactsRes, adsRes] = await Promise.all([
+      const [statsRes, usersRes, contactsRes, adsRes, plansRes, deletedRes] = await Promise.all([
         fetch('/api/admin/stats', { headers }).then(r => r.json()),
         fetch('/api/admin/users', { headers }).then(r => r.json()),
         fetch('/api/admin/contacts', { headers }).then(r => r.json()),
         fetch('/api/ads').then(r => r.json()), // ads can be public
+        fetch('/api/vip-plans').then(r => r.json()).catch(() => []),
+        fetch('/api/admin/deleted-names', { headers }).then(r => r.json()).catch(() => [])
       ]);
 
       if (statsRes && statsRes.error) {
@@ -118,10 +246,197 @@ export default function AdminDashboard({
       setUsers(Array.isArray(usersRes) ? usersRes : []);
       setContacts(Array.isArray(contactsRes) ? contactsRes : []);
       setAds(Array.isArray(adsRes) ? adsRes : []);
+      setVipPlans(Array.isArray(plansRes) ? plansRes : []);
+      setDeletedNames(Array.isArray(deletedRes) ? deletedRes : []);
     } catch (err) {
       showToast('خطأ أثناء تحميل بيانات لوحة التحكم.', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Filtered deleted names list
+  const filteredDeletedNames = useMemo(() => {
+    return (deletedNames || []).filter((rec) => {
+      if (deletedNamesStatusFilter === 'hidden' && rec.restored) return false;
+      if (deletedNamesStatusFilter === 'restored' && !rec.restored) return false;
+
+      if (!deletedNamesSearch.trim()) return true;
+      const q = deletedNamesSearch.trim().toLowerCase();
+      return (
+        (rec.phoneNumber && rec.phoneNumber.toLowerCase().includes(q)) ||
+        (rec.contactName && rec.contactName.toLowerCase().includes(q)) ||
+        (rec.deletedByPhone && rec.deletedByPhone.toLowerCase().includes(q))
+      );
+    });
+  }, [deletedNames, deletedNamesSearch, deletedNamesStatusFilter]);
+
+  const toggleSelectDeletedId = (id: string) => {
+    setSelectedDeletedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAllDeleted = () => {
+    const visibleIds = filteredDeletedNames.map((r) => r.id);
+    if (visibleIds.length === 0) return;
+    const allSelected = visibleIds.every((id) => selectedDeletedIds.includes(id));
+    if (allSelected) {
+      setSelectedDeletedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedDeletedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleDeletedNamesAction = async (
+    recordIds: string[],
+    action: 'restore' | 'rehide' | 'delete_log'
+  ) => {
+    if (!recordIds || recordIds.length === 0) {
+      showToast('يرجى تحديد اسم واحد على الأقل لتنفيذ الإجراء.', 'warning');
+      return;
+    }
+
+    if (action === 'delete_log' && !confirm(`هل أنت متأكد من حذف (${recordIds.length}) سجل من قائمة المحذوفات نهائياً؟`)) {
+      return;
+    }
+
+    try {
+      if (recordIds.length === 1) {
+        setRestoringRecordId(recordIds[0]);
+      } else {
+        setBulkDeletedLoading(true);
+      }
+
+      const res = await fetch('/api/admin/deleted-names/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+        body: JSON.stringify({ recordIds, action })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'فشل تنفيذ الإجراء.');
+
+      showToast(data.message || 'تم تنفيذ الإجراء بنجاح!', 'success');
+      setSelectedDeletedIds((prev) => prev.filter((id) => !recordIds.includes(id)));
+      fetchAdminData();
+    } catch (err: any) {
+      showToast(err.message || 'حدث خطأ أثناء تنفيذ الإجراء.', 'error');
+    } finally {
+      setRestoringRecordId(null);
+      setBulkDeletedLoading(false);
+    }
+  };
+
+  const handleRestoreDeletedName = async (recordId: string) => {
+    await handleDeletedNamesAction([recordId], 'restore');
+  };
+
+  // VIP Plans Management Handlers
+  const handleOpenNewPlanModal = () => {
+    setEditingPlan(null);
+    setPlanFormName('');
+    setPlanFormPriceYmr(3000);
+    setPlanFormPriceUsd(6);
+    setPlanFormReveals(15);
+    setPlanFormNameDeletions(2);
+    setPlanFormType('bundle');
+    setPlanFormDuration(30);
+    setPlanFormDescription('كشف هوية ورقم مسجّل الاسم لـ 15 عملية + حذف اسمين من قاعدة البيانات');
+    setPlanFormBadge('جديد');
+    setPlanFormFeaturesText('15 عملية كشف هوية ورقم مسجّل الاسم\nحذف وإخفاء اسمين من نتائج البحث\nتاريخ وتوقيت حفظ جهة الاتصال\nدعم فني عبر واتساب الإدارة');
+    setIsPlanModalOpen(true);
+  };
+
+  const handleOpenEditPlanModal = (plan: VipPlan) => {
+    setEditingPlan(plan);
+    setPlanFormName(plan.name);
+    setPlanFormPriceYmr(plan.priceYmr);
+    setPlanFormPriceUsd(plan.priceUsd || 0);
+    setPlanFormReveals(plan.revealsCount ?? 0);
+    setPlanFormNameDeletions(plan.nameDeletionsCount ?? 0);
+    setPlanFormType(plan.planType || 'bundle');
+    setPlanFormDuration(plan.durationDays || 0);
+    setPlanFormDescription(plan.description);
+    setPlanFormBadge(plan.badge || '');
+    setPlanFormFeaturesText((plan.features || []).join('\n'));
+    setIsPlanModalOpen(true);
+  };
+
+  const handleSaveVipPlanSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!planFormName.trim()) {
+      showToast('يرجى كتابة اسم الباقة.', 'warning');
+      return;
+    }
+    try {
+      setSavingVipPlan(true);
+      const planPayload: VipPlan = {
+        id: editingPlan?.id || `plan_${Date.now()}`,
+        name: planFormName.trim(),
+        priceYmr: Number(planFormPriceYmr) || 0,
+        priceUsd: Number(planFormPriceUsd) || 0,
+        revealsCount: planFormType === 'delete_only' ? 0 : (Number(planFormReveals) || 0),
+        nameDeletionsCount: planFormType === 'reveal_only' ? 0 : (Number(planFormNameDeletions) || 0),
+        planType: planFormType,
+        durationDays: Number(planFormDuration) || 0,
+        description: planFormDescription.trim(),
+        badge: planFormBadge.trim(),
+        features: planFormFeaturesText.split('\n').map(s => s.trim()).filter(Boolean),
+        isActive: editingPlan ? editingPlan.isActive : true,
+        order: editingPlan?.order || (vipPlans.length + 1)
+      };
+
+      const res = await fetch('/api/admin/vip-plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+        body: JSON.stringify(planPayload)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'فشل حفظ الباقة.');
+
+      showToast('تم حفظ وتحديث بيانات الباقة بنجاح!', 'success');
+      setIsPlanModalOpen(false);
+      setEditingPlan(null);
+      const updated = await fetch('/api/vip-plans').then(r => r.json());
+      setVipPlans(Array.isArray(updated) ? updated : []);
+    } catch (err: any) {
+      showToast(err.message || 'حدث خطأ أثناء حفظ الباقة.', 'error');
+    } finally {
+      setSavingVipPlan(false);
+    }
+  };
+
+  const handleDeleteVipPlan = async (id: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذه الباقة؟')) return;
+    try {
+      const res = await fetch(`/api/admin/vip-plans/${id}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-token': adminToken }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'فشل حذف الباقة.');
+
+      showToast('تم حذف الباقة بنجاح.', 'success');
+      setVipPlans(prev => prev.filter(p => p.id !== id));
+    } catch (err: any) {
+      showToast(err.message || 'حدث خطأ أثناء حذف الباقة.', 'error');
+    }
+  };
+
+  const handleToggleVipPlanStatus = async (plan: VipPlan) => {
+    try {
+      const updatedPlan = { ...plan, isActive: !plan.isActive };
+      const res = await fetch('/api/admin/vip-plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
+        body: JSON.stringify(updatedPlan)
+      });
+      if (res.ok) {
+        setVipPlans(prev => prev.map(p => p.id === plan.id ? updatedPlan : p));
+        showToast(`تم ${updatedPlan.isActive ? 'تفعيل' : 'تعطيل'} الباقة بنجاح.`, 'success');
+      }
+    } catch {
+      showToast('فشل تغيير حالة الباقة.', 'error');
     }
   };
 
@@ -575,6 +890,8 @@ export default function AdminDashboard({
         {[
           { key: 'overview', label: 'الإحصائيات' },
           { key: 'users', label: 'المستخدمون' },
+          { key: 'plans', label: 'إدارة باقات VIP 👑' },
+          { key: 'deleted_names', label: `الأسماء المحذوفة 🛡️ (${deletedNames.filter(d => !d.restored).length})` },
           { key: 'database', label: 'قاعدة البيانات' },
           { key: 'ads', label: 'الإعلانات والتحكم' },
           { key: 'security', label: 'الحماية والاحتيال' },
@@ -588,7 +905,7 @@ export default function AdminDashboard({
                 fetchFullDatabase();
               }
             }}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${activeTab === tab.key ? 'bg-gradient-to-r from-[#e5c158] to-[#c5a059] text-black shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${activeTab === tab.key ? 'bg-gradient-to-r from-[#e5c158] to-[#c5a059] text-black shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
           >
             {tab.label}
           </button>
@@ -738,73 +1055,696 @@ export default function AdminDashboard({
           {/* TAB 2: USER DIRECTORY */}
           {activeTab === 'users' && (
             <div className="bg-[#0c122b]/80 border border-white/5 rounded-2xl p-5 space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-white/5">
-                <span className="text-gray-400 text-xs">{users.length} مستخدم مسجل</span>
-                <h3 className="text-white text-sm font-bold">دليل حسابات المستخدمين</h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/5">
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400 text-xs">
+                    إجمالي المستخدمين: <strong className="text-white font-mono">{users.length}</strong>
+                  </span>
+                  {userSearchQuery && (
+                    <span className="text-[#e5c158] text-xs font-mono">
+                      (نتائج البحث: {filteredUsers.length})
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-white text-sm font-bold flex items-center gap-2 justify-end">
+                  <span>دليل حسابات المستخدمين وإدارة ملفاتهم</span>
+                  <Users className="w-4 h-4 text-[#e5c158]" />
+                </h3>
               </div>
 
-              <div className="overflow-x-auto">
+              {/* Search by Phone & Status Filter Bar */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                <div className="relative flex-1 max-w-md">
+                  <input
+                    type="text"
+                    value={userSearchQuery}
+                    onChange={(e) => setUserSearchQuery(e.target.value)}
+                    placeholder="ابحث عن مستخدم برقم الهاتف أو معرف الجهاز..."
+                    className="w-full py-2.5 pl-8 pr-9 text-xs bg-black/50 border border-white/10 focus:border-[#e5c158] rounded-xl text-white outline-none font-mono"
+                  />
+                  <Search className="w-4 h-4 text-[#e5c158] absolute right-3 top-1/2 -translate-y-1/2" />
+                  {userSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setUserSearchQuery('')}
+                      className="text-gray-400 hover:text-white absolute left-2.5 top-1/2 -translate-y-1/2"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Quick Filter Pills */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    { key: 'all', label: `الكل (${users.length})` },
+                    { key: 'vip', label: `مشتركو VIP (${users.filter(u => u.canRevealRegistrar || u.canDeleteNames).length})` },
+                    { key: 'active', label: `نشط (${users.filter(u => u.isActive).length})` },
+                    { key: 'inactive', label: `معطل (${users.filter(u => !u.isActive).length})` }
+                  ].map((f: any) => (
+                    <button
+                      key={f.key}
+                      type="button"
+                      onClick={() => setUserStatusFilter(f.key)}
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                        userStatusFilter === f.key
+                          ? 'bg-[#e5c158] text-black shadow'
+                          : 'bg-black/40 text-gray-400 hover:text-white border border-white/5'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <p className="text-[11px] text-gray-400">
+                💡 اضغط على أي مستخدم أو رقمه لفتح ملفه الكامل وتعديل رصيده ونقاطه وصلاحيات باقات الـ VIP أو استعراض جهات اتصاله.
+              </p>
+
+              <div className="overflow-x-auto rounded-xl border border-white/5">
                 <table className="w-full text-right text-xs">
-                  <thead>
-                    <tr className="text-gray-500 border-b border-white/5">
-                      <th className="pb-2">رقم الهاتف</th>
-                      <th className="pb-2">معرف الجهاز / الموديل</th>
-                      <th className="pb-2 text-center">النقاط</th>
-                      <th className="pb-2 text-center">رصيد اليوم</th>
-                      <th className="pb-2 text-center">الحالة</th>
-                      <th className="pb-2 text-left">العمليات الإدارية</th>
+                  <thead className="bg-black/40">
+                    <tr className="text-gray-400 border-b border-white/5">
+                      <th className="p-3">رقم الهاتف (اضغط لفتح الملف)</th>
+                      <th className="p-3">معرف الجهاز / الموديل</th>
+                      <th className="p-3 text-center">النقاط</th>
+                      <th className="p-3 text-center">رصيد اليوم</th>
+                      <th className="p-3 text-center">باقات VIP (كشف / حذف)</th>
+                      <th className="p-3 text-center">الحالة</th>
+                      <th className="p-3 text-left">العمليات الإدارية</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {users.map((user) => (
-                      <tr key={user.id} className="hover:bg-white/5">
-                        <td className="py-3 font-bold font-mono text-white">{user.phone}</td>
-                        <td className="py-3 text-gray-400 font-mono text-[10px]">
-                          <div>{user.deviceType || 'غير معروف'}</div>
-                          <div className="text-gray-600 text-[9px]">{(user.deviceId || '').substring(0, 15)}...</div>
-                        </td>
-                        <td className="py-3 text-center text-[#e5c158] font-bold font-mono">{user.points}</td>
-                        <td className="py-3 text-center font-mono">{user.searchBalance}</td>
-                        <td className="py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${user.isActive ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
-                            {user.isActive ? 'نشط' : 'معطل'}
-                          </span>
-                        </td>
-                        <td className="py-3 text-left">
-                          <div className="inline-flex gap-1.5" dir="ltr">
-                            <button
-                              onClick={() => handleToggleUser(user.id)}
-                              className={`p-1 rounded ${user.isActive ? 'text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20' : 'text-green-400 bg-green-500/10 hover:bg-green-500/20'}`}
-                              title={user.isActive ? "تعطيل الحساب" : "تفعيل الحساب"}
-                            >
-                              {user.isActive ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
-                            </button>
-                            <button
-                              onClick={() => handleGrantPoints(user.id, 50)}
-                              className="px-2 py-1 text-[9px] font-bold bg-[#c5a059]/10 text-[#e5c158] border border-[#c5a059]/20 hover:bg-[#c5a059]/20 rounded"
-                            >
-                              +50نقطة
-                            </button>
-                            <button
-                              onClick={() => handleDeleteUser(user.id)}
-                              className="p-1 text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded"
-                              title="حذف نهائي"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
+                    {filteredUsers.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-8 text-center text-gray-500">
+                          لا يوجد مستخدم مطابق لبحثك «{userSearchQuery}»
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      filteredUsers.map((user) => (
+                        <tr
+                          key={user.id}
+                          onClick={() => handleOpenPlanModal(user)}
+                          className="hover:bg-white/[0.04] transition-colors cursor-pointer group"
+                          title="انقر لفتح ملف المستخدم الكامل والتحكم بصلاحياته"
+                        >
+                          <td className="p-3 font-bold font-mono text-white group-hover:text-[#ffcc00] transition-colors flex items-center gap-2">
+                            <span className="underline decoration-dotted underline-offset-4">{user.phone}</span>
+                            <Edit3 className="w-3 h-3 text-gray-500 group-hover:text-[#ffcc00] opacity-70" />
+                          </td>
+                          <td className="p-3 text-gray-400 font-mono text-[10px]">
+                            <div>{user.deviceType || 'غير معروف'}</div>
+                            <div className="text-gray-600 text-[9px]">{(user.deviceId || '').substring(0, 15)}...</div>
+                          </td>
+                          <td className="p-3 text-center text-[#e5c158] font-bold font-mono">{user.points}</td>
+                          <td className="p-3 text-center font-mono">{user.searchBalance}</td>
+                          <td className="p-3 text-center space-y-1">
+                            {user.canRevealRegistrar || user.canDeleteNames ? (
+                              <div className="flex flex-col items-center gap-1">
+                                {user.canRevealRegistrar && (
+                                  <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                                    <Award className="w-2.5 h-2.5 text-purple-400" />
+                                    <span>كشف ({user.revealRegistrarUsed || 0}/{user.revealRegistrarLimit || 0})</span>
+                                  </div>
+                                )}
+                                {user.canDeleteNames && (
+                                  <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                                    <Trash2 className="w-2.5 h-2.5 text-rose-400" />
+                                    <span>حذف ({user.nameDeletionsUsed || 0}/{user.nameDeletionsLimit || 0})</span>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-gray-500 text-[10px]">غير مفعل</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${user.isActive ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                              {user.isActive ? 'نشط' : 'معطل'}
+                            </span>
+                          </td>
+                          <td className="p-3 text-left" onClick={(e) => e.stopPropagation()}>
+                            <div className="inline-flex items-center gap-1.5" dir="ltr">
+                              <button
+                                onClick={() => {
+                                  setUserFilter(user.phone);
+                                  setActiveTab('database');
+                                  fetchFullDatabase();
+                                }}
+                                className="px-2 py-1 text-[9px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30 hover:bg-blue-500/25 rounded flex items-center gap-1 transition-all cursor-pointer"
+                                title="عرض كافة جهات الاتصال التي زامنها هذا المستخدم"
+                              >
+                                <Database className="w-3 h-3" />
+                                <span>جهات اتصاله</span>
+                              </button>
+                              <button
+                                onClick={() => handleOpenPlanModal(user)}
+                                className="px-2 py-1 text-[9px] font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30 hover:bg-purple-500/25 rounded flex items-center gap-1 transition-all cursor-pointer"
+                                title="فتح ملف المستخدم الكامل وصلاحيات VIP"
+                              >
+                                <Award className="w-3 h-3 text-purple-400" />
+                                <span>ملف المستخدم / VIP</span>
+                              </button>
+                              <button
+                                onClick={() => handleToggleUser(user.id)}
+                                className={`p-1 rounded cursor-pointer ${user.isActive ? 'text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20' : 'text-green-400 bg-green-500/10 hover:bg-green-500/20'}`}
+                                title={user.isActive ? "تعطيل الحساب" : "تفعيل الحساب"}
+                              >
+                                {user.isActive ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
+                              </button>
+                              <button
+                                onClick={() => handleGrantPoints(user.id, 50)}
+                                className="px-2 py-1 text-[9px] font-bold bg-[#c5a059]/10 text-[#e5c158] border border-[#c5a059]/20 hover:bg-[#c5a059]/20 rounded cursor-pointer"
+                              >
+                                +50نقطة
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(user.id)}
+                                className="p-1 text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded cursor-pointer"
+                                title="حذف نهائي"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
+          {/* TAB: VIP PLANS & PRICING MANAGEMENT */}
+          {activeTab === 'plans' && (
+            <div className="space-y-6">
+              {/* Header Bar */}
+              <div className="bg-[#0c122b]/90 border border-purple-500/30 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="space-y-1 text-right">
+                  <div className="flex items-center gap-2">
+                    <Crown className="w-5 h-5 text-yellow-400" />
+                    <h3 className="text-white text-base md:text-lg font-bold">إدارة وتخصيص باقات كاشف المسجّل VIP</h3>
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                      {vipPlans.length} باقة
+                    </span>
+                  </div>
+                  <p className="text-gray-400 text-xs">
+                    تعديل ما تقدمه كل باقة، وعدد عمليات الاستعلام، والأسعار بالريال اليمني والدولار، والتحكم بظهورها الفوري للمستخدمين.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleOpenNewPlanModal}
+                  className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg flex items-center gap-2 transition-all active:scale-95 shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>إضافة باقة جديدة</span>
+                </button>
+              </div>
+
+              {/* Plans Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {vipPlans.map((plan) => (
+                  <div
+                    key={plan.id}
+                    className={`relative rounded-3xl p-5 border-2 transition-all space-y-4 flex flex-col justify-between ${
+                      plan.isActive
+                        ? 'bg-gradient-to-b from-[#150d30] to-[#090e24] border-purple-500/40 shadow-lg'
+                        : 'bg-black/40 border-white/5 opacity-70'
+                    }`}
+                  >
+                    {/* Badge */}
+                    {plan.badge && (
+                      <div className="absolute -top-3 right-6 bg-gradient-to-r from-yellow-500 to-amber-500 text-black text-[9px] font-black px-2.5 py-0.5 rounded-full shadow-md">
+                        {plan.badge}
+                      </div>
+                    )}
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between pt-1">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${plan.isActive ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                          {plan.isActive ? 'مفعلة وتظهر للعملاء' : 'معطلة مخفية'}
+                        </span>
+                        <h4 className="text-white text-base font-black">{plan.name}</h4>
+                      </div>
+
+                      <p className="text-gray-300 text-xs leading-relaxed min-h-[32px]">
+                        {plan.description}
+                      </p>
+
+                      <div className="p-3 rounded-xl bg-black/40 border border-white/5 space-y-1">
+                        <div className="flex items-baseline justify-between">
+                          <span className="text-gray-400 text-xs">سعر الباقة:</span>
+                          <span className="text-yellow-400 font-mono font-black text-lg">
+                            {plan.priceYmr.toLocaleString('ar-EG')} <span className="text-xs text-yellow-200">ريال يمني</span>
+                          </span>
+                        </div>
+                        {plan.priceUsd > 0 && (
+                          <div className="text-left text-[10px] text-gray-400 font-mono" dir="ltr">
+                            ~ ${plan.priceUsd} USD
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5 py-1 border-b border-white/5 text-xs">
+                        {plan.revealsCount > 0 && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-400">عمليات كشف المسجّل:</span>
+                            <span className="text-purple-300 font-mono font-bold text-xs bg-purple-500/20 px-2 py-0.5 rounded border border-purple-500/30">
+                              {plan.revealsCount} كشف
+                            </span>
+                          </div>
+                        )}
+                        {(plan.nameDeletionsCount || 0) > 0 && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-400">حذف وتعديل الأسماء:</span>
+                            <span className="text-rose-300 font-mono font-bold text-xs bg-rose-500/20 px-2 py-0.5 rounded border border-rose-500/30">
+                              {plan.nameDeletionsCount} أسماء 🛡️
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Features */}
+                      <div className="space-y-1 text-xs">
+                        <span className="text-gray-400 text-[10px] block">المزايا المضمنة:</span>
+                        {(plan.features || []).map((feat, idx) => (
+                          <div key={idx} className="flex items-center gap-1.5 text-gray-300 text-[11px]">
+                            <Check className="w-3 h-3 text-green-400 shrink-0" />
+                            <span>{feat}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="pt-3 border-t border-white/5 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleVipPlanStatus(plan)}
+                        className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer ${
+                          plan.isActive
+                            ? 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20'
+                            : 'bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20'
+                        }`}
+                      >
+                        {plan.isActive ? 'تعطيل الباقة' : 'تفعيل الباقة'}
+                      </button>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditPlanModal(plan)}
+                          className="px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border border-purple-500/30 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>تعديل</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteVipPlan(plan.id)}
+                          className="p-1.5 text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-all cursor-pointer"
+                          title="حذف الباقة"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* DELETED NAMES QUICK BANNER IN PLANS TAB */}
+              <div className="bg-[#0c122b]/90 border border-rose-500/30 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('deleted_names')}
+                  className="px-4 py-2.5 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-bold text-xs rounded-xl shadow-lg flex items-center gap-2 transition-all cursor-pointer shrink-0"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>فتح قسم إدارة الأسماء المحذوفة الكامل ({deletedNames.length})</span>
+                </button>
+                <div className="text-right space-y-1">
+                  <div className="flex items-center gap-2 justify-end">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                      {deletedNames.filter(d => !d.restored).length} مخفي حالياً
+                    </span>
+                    <h4 className="text-white text-sm font-bold">إدارة الأسماء التي حذفها المشتركون واستعادتها</h4>
+                  </div>
+                  <p className="text-gray-400 text-xs">
+                    يمكنك تصفح جميع الأسماء المحذوفة، أو تحديد الكل وتفعيلها دفعة واحدة من قسم «الأسماء المحذوفة 🛡️».
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB: DELETED NAMES MANAGEMENT (SINGLE & BULK ACTIONS) */}
+          {activeTab === 'deleted_names' && (() => {
+            const visibleIds = filteredDeletedNames.map((r) => r.id);
+            const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedDeletedIds.includes(id));
+            const hiddenCount = deletedNames.filter((d) => !d.restored).length;
+            const restoredCount = deletedNames.filter((d) => d.restored).length;
+
+            return (
+              <div className="space-y-6">
+                {/* Top Summary Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-[#0c122b]/80 border border-white/10 rounded-2xl p-4 space-y-1">
+                    <span className="text-gray-400 text-[11px] font-bold block">إجمالي عمليات حذف الأسماء</span>
+                    <div className="text-white text-2xl font-black font-mono">{deletedNames.length}</div>
+                    <span className="text-gray-500 text-[10px] block">جميع السجلات المقيدة في النظام</span>
+                  </div>
+
+                  <div className="bg-[#0c122b]/80 border border-rose-500/30 rounded-2xl p-4 space-y-1">
+                    <span className="text-rose-300 text-[11px] font-bold block">أسماء مخفية ومحذوفة حالياً</span>
+                    <div className="text-rose-400 text-2xl font-black font-mono">{hiddenCount}</div>
+                    <span className="text-gray-400 text-[10px] block">محجوبة ولا تظهر للمستخدمين في البحث</span>
+                  </div>
+
+                  <div className="bg-[#0c122b]/80 border border-emerald-500/30 rounded-2xl p-4 space-y-1">
+                    <span className="text-emerald-300 text-[11px] font-bold block">أسماء تمت استعادتها وتفعيلها</span>
+                    <div className="text-emerald-400 text-2xl font-black font-mono">{restoredCount}</div>
+                    <span className="text-gray-400 text-[10px] block">عادت للظهور بشكل طبيعي في نتائج البحث</span>
+                  </div>
+                </div>
+
+                {/* Main Management Box */}
+                <div className="bg-[#0c122b]/90 border border-rose-500/30 rounded-2xl p-5 space-y-5">
+                  {/* Header & Quick "Apply to All" Actions */}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-white/10">
+                    <div className="space-y-1 text-right">
+                      <div className="flex items-center gap-2">
+                        <Trash2 className="w-5 h-5 text-rose-400" />
+                        <h3 className="text-white text-base md:text-lg font-bold">إدارة الأسماء المحذوفة بواسطة المستخدمين</h3>
+                      </div>
+                      <p className="text-gray-400 text-xs">
+                        تحكم كامل بالأسماء التي قام المشتركون بحذفها: يمكنك البحث، تحديد الكل، إعادة تفعيلها لتظهر في البحث مجدداً، أو إعادة إخفائها.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {hiddenCount > 0 && (
+                        <button
+                          type="button"
+                          disabled={bulkDeletedLoading}
+                          onClick={() => {
+                            const allHiddenIds = deletedNames.filter((d) => !d.restored).map((d) => d.id);
+                            handleDeletedNamesAction(allHiddenIds, 'restore');
+                          }}
+                          className="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>تفعيل واستعادة كل المخفي ({hiddenCount}) ↩️</span>
+                        </button>
+                      )}
+                      {restoredCount > 0 && (
+                        <button
+                          type="button"
+                          disabled={bulkDeletedLoading}
+                          onClick={() => {
+                            const allRestoredIds = deletedNames.filter((d) => d.restored).map((d) => d.id);
+                            handleDeletedNamesAction(allRestoredIds, 'rehide');
+                          }}
+                          className="px-3.5 py-2 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>إعادة إخفاء كل المستعاد ({restoredCount}) 🚫</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Search & Filter Controls */}
+                  <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={deletedNamesSearch}
+                        onChange={(e) => setDeletedNamesSearch(e.target.value)}
+                        placeholder="ابحث بالرقم المستهدف، أو الاسم المحذوف، أو رقم المشترك الذي حذفه..."
+                        className="w-full py-2.5 pl-8 pr-9 text-xs bg-black/50 border border-white/10 focus:border-rose-400 rounded-xl text-white outline-none transition-all"
+                      />
+                      <Search className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                      {deletedNamesSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setDeletedNamesSearch('')}
+                          className="text-gray-400 hover:text-white absolute left-2.5 top-1/2 -translate-y-1/2 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        { key: 'all', label: `الكل (${deletedNames.length})` },
+                        { key: 'hidden', label: `مخفي حالياً (${hiddenCount})` },
+                        { key: 'restored', label: `مُفعّل / مستعاد (${restoredCount})` },
+                      ].map((f) => (
+                        <button
+                          key={f.key}
+                          type="button"
+                          onClick={() => setDeletedNamesStatusFilter(f.key as any)}
+                          className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                            deletedNamesStatusFilter === f.key
+                              ? 'bg-rose-500 text-white shadow-md'
+                              : 'bg-black/40 text-gray-400 hover:text-white border border-white/5'
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Select All & Bulk Action Bar */}
+                  <div className="bg-black/50 border border-white/10 rounded-xl p-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={toggleSelectAllDeleted}
+                        disabled={filteredDeletedNames.length === 0}
+                        className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white text-xs font-bold flex items-center gap-2 transition-all cursor-pointer disabled:opacity-40"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={allVisibleSelected}
+                          onChange={() => {}}
+                          className="w-4 h-4 accent-rose-500 rounded cursor-pointer pointer-events-none"
+                        />
+                        <span>
+                          {allVisibleSelected
+                            ? `إلغاء تحديد الكل (${filteredDeletedNames.length})`
+                            : `تحديد الكل (${filteredDeletedNames.length})`}
+                        </span>
+                      </button>
+
+                      {selectedDeletedIds.length > 0 && (
+                        <span className="text-xs font-bold text-[#e5c158]">
+                          تم تحديد <span className="font-mono underline">{selectedDeletedIds.length}</span> سجل
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Bulk Action Buttons */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={selectedDeletedIds.length === 0 || bulkDeletedLoading}
+                        onClick={() => handleDeletedNamesAction(selectedDeletedIds, 'restore')}
+                        className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-md transition-all cursor-pointer disabled:opacity-40"
+                      >
+                        {bulkDeletedLoading ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
+                        <span>تفعيل واستعادة المحدد ({selectedDeletedIds.length}) ↩️</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={selectedDeletedIds.length === 0 || bulkDeletedLoading}
+                        onClick={() => handleDeletedNamesAction(selectedDeletedIds, 'rehide')}
+                        className="px-3.5 py-2 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-40"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>إعادة إخفاء المحدد ({selectedDeletedIds.length}) 🚫</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={selectedDeletedIds.length === 0 || bulkDeletedLoading}
+                        onClick={() => handleDeletedNamesAction(selectedDeletedIds, 'delete_log')}
+                        className="px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-40"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>حذف السجلات المحددة</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Deleted Names Table */}
+                  {filteredDeletedNames.length === 0 ? (
+                    <div className="text-center py-12 bg-black/20 rounded-xl border border-white/5 space-y-2">
+                      <Trash2 className="w-8 h-8 text-gray-600 mx-auto" />
+                      <p className="text-gray-400 text-xs font-bold">
+                        {deletedNames.length === 0
+                          ? 'لم يقم أي مستخدم بحذف أسماء من قاعدة البيانات حتى الآن.'
+                          : 'لا توجد سجلات مطابقة لبحثك أو الفلتر المحدد.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-xl border border-white/10">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-black/60 text-gray-400 border-b border-white/10">
+                          <tr>
+                            <th className="p-3 w-10 text-center">
+                              <input
+                                type="checkbox"
+                                checked={allVisibleSelected}
+                                onChange={toggleSelectAllDeleted}
+                                className="w-4 h-4 accent-rose-500 rounded cursor-pointer"
+                                title="تحديد / إلغاء تحديد الكل"
+                              />
+                            </th>
+                            <th className="p-3">الرقم المستهدف</th>
+                            <th className="p-3">الاسم المحذوف</th>
+                            <th className="p-3">حُذف بواسطة المشترك</th>
+                            <th className="p-3">تاريخ ووقت الحذف</th>
+                            <th className="p-3 text-center">حالة الاسم بالبحث</th>
+                            <th className="p-3 text-left">إجراءات التحكم</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {filteredDeletedNames.map((rec) => {
+                            const isSelected = selectedDeletedIds.includes(rec.id);
+                            const matchingUser = users.find((u) => u.phone === rec.deletedByPhone);
+
+                            return (
+                              <tr
+                                key={rec.id}
+                                onClick={() => toggleSelectDeletedId(rec.id)}
+                                className={`transition-colors cursor-pointer ${
+                                  isSelected ? 'bg-rose-500/10 hover:bg-rose-500/15' : 'hover:bg-white/[0.03]'
+                                }`}
+                              >
+                                <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => toggleSelectDeletedId(rec.id)}
+                                    className="w-4 h-4 accent-rose-500 rounded cursor-pointer"
+                                  />
+                                </td>
+
+                                <td className="p-3 font-mono font-bold text-white" onClick={(e) => e.stopPropagation()}>
+                                  <div className="flex items-center gap-1.5">
+                                    <span>{rec.phoneNumber}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyContactPhone(rec.phoneNumber)}
+                                      className="p-1 text-gray-500 hover:text-white rounded"
+                                      title="نسخ الرقم"
+                                    >
+                                      <Copy className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </td>
+
+                                <td className="p-3 font-bold text-yellow-300 text-sm">
+                                  «{rec.contactName}»
+                                </td>
+
+                                <td className="p-3 font-mono text-gray-300" onClick={(e) => e.stopPropagation()}>
+                                  {matchingUser ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenPlanModal(matchingUser)}
+                                      className="px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                                      title="فتح ملف هذا المشترك"
+                                    >
+                                      <span>{rec.deletedByPhone}</span>
+                                      <Crown className="w-3 h-3 text-yellow-400" />
+                                    </button>
+                                  ) : (
+                                    <span>{rec.deletedByPhone || 'غير معروف'}</span>
+                                  )}
+                                </td>
+
+                                <td className="p-3 font-mono text-[11px] text-gray-400">
+                                  {rec.deletedAt ? rec.deletedAt.replace('T', ' ').substring(0, 16) : '-'}
+                                </td>
+
+                                <td className="p-3 text-center">
+                                  {rec.restored ? (
+                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 inline-flex items-center gap-1">
+                                      <Check className="w-3 h-3" />
+                                      <span>مُفعّل ويظهر بالبحث</span>
+                                    </span>
+                                  ) : (
+                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 inline-flex items-center gap-1">
+                                      <X className="w-3 h-3" />
+                                      <span>مخفي ومحذوف</span>
+                                    </span>
+                                  )}
+                                </td>
+
+                                <td className="p-3 text-left" onClick={(e) => e.stopPropagation()}>
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    {rec.restored ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeletedNamesAction([rec.id], 'rehide')}
+                                        disabled={restoringRecordId === rec.id || bulkDeletedLoading}
+                                        className="px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 rounded-lg text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                                      >
+                                        {restoringRecordId === rec.id ? 'جاري التنفيذ...' : 'إعادة إخفاء 🚫'}
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeletedNamesAction([rec.id], 'restore')}
+                                        disabled={restoringRecordId === rec.id || bulkDeletedLoading}
+                                        className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 rounded-lg text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                                      >
+                                        {restoringRecordId === rec.id ? 'جاري الاستعادة...' : 'تفعيل واستعادة ↩️'}
+                                      </button>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeletedNamesAction([rec.id], 'delete_log')}
+                                      disabled={restoringRecordId === rec.id || bulkDeletedLoading}
+                                      className="p-1.5 text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-lg transition-all cursor-pointer disabled:opacity-50"
+                                      title="مسح السجل من القائمة"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* TAB 3: DATABASE CRUD MANAGER */}
           {activeTab === 'database' && (() => {
             const filteredContacts = (contacts || []).filter(c => {
+              if (userFilter !== 'all' && c.addedByUser !== userFilter) return false;
               if (!dbSearch.trim()) return true;
               const q = dbSearch.trim().toLowerCase();
               return (c.phoneNumber && c.phoneNumber.toLowerCase().includes(q)) || 
@@ -970,34 +1910,67 @@ export default function AdminDashboard({
 
                 {/* Main Full-Database Browser & Table */}
                 <div className="bg-[#0c122b]/80 border border-white/5 rounded-2xl p-5 space-y-4">
-                  {/* Search bar & Page-size selector */}
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                    <div className="relative w-full sm:w-80">
-                      <input
-                        type="text"
-                        value={dbSearch}
-                        onChange={(e) => {
-                          setDbSearch(e.target.value);
-                          setDbPage(1);
-                        }}
-                        placeholder="ابحث بالرقم أو بالاسم أو بمصدر الإضافة..."
-                        className="w-full py-2.5 pl-3 pr-9 text-xs bg-black/50 border border-white/10 focus:border-[#e5c158] rounded-xl text-white outline-none"
-                      />
-                      <Search className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
-                      {dbSearch && (
-                        <button
-                          onClick={() => {
-                            setDbSearch('');
+                  {/* Search bar & Page-size selector & Contributor filter */}
+                  <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+                      <div className="relative flex-1 max-w-md">
+                        <input
+                          type="text"
+                          value={dbSearch}
+                          onChange={(e) => {
+                            setDbSearch(e.target.value);
                             setDbPage(1);
                           }}
-                          className="text-gray-400 hover:text-white absolute left-2.5 top-1/2 -translate-y-1/2 text-xs"
+                          placeholder="ابحث بالرقم أو بالاسم أو بمصدر الإضافة..."
+                          className="w-full py-2.5 pl-3 pr-9 text-xs bg-black/50 border border-white/10 focus:border-[#e5c158] rounded-xl text-white outline-none"
+                        />
+                        <Search className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                        {dbSearch && (
+                          <button
+                            onClick={() => {
+                              setDbSearch('');
+                              setDbPage(1);
+                            }}
+                            className="text-gray-400 hover:text-white absolute left-2.5 top-1/2 -translate-y-1/2 text-xs"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Contributor filter dropdown */}
+                      <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-xl px-2.5 py-1.5 shrink-0">
+                        <Filter className="w-3.5 h-3.5 text-[#e5c158]" />
+                        <span className="text-[11px] text-gray-400 whitespace-nowrap">المستخدم:</span>
+                        <select
+                          value={userFilter}
+                          onChange={(e) => {
+                            setUserFilter(e.target.value);
+                            setDbPage(1);
+                          }}
+                          className="bg-transparent text-white text-xs outline-none max-w-[150px] font-mono cursor-pointer"
                         >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                          <option value="all" className="bg-[#0c122b] text-white">الكل ({uniqueContributors.length})</option>
+                          {uniqueContributors.map(u => (
+                            <option key={u} value={u} className="bg-[#0c122b] text-white">{u}</option>
+                          ))}
+                        </select>
+                        {userFilter !== 'all' && (
+                          <button
+                            onClick={() => {
+                              setUserFilter('all');
+                              setDbPage(1);
+                            }}
+                            className="text-[10px] text-yellow-400 hover:text-white underline font-bold px-1 whitespace-nowrap"
+                            title="إلغاء تصفية المستخدم والعودة لعرض الكل"
+                          >
+                            عرض الكل
+                          </button>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end text-xs">
+                    <div className="flex items-center gap-3 justify-between sm:justify-end text-xs shrink-0">
                       <div className="text-gray-400 text-xs">
                         عرض: <span className="text-white font-mono font-bold">{paginatedContacts.length}</span> من أصل{' '}
                         <span className="text-[#e5c158] font-mono font-bold">{totalFiltered.toLocaleString('ar-EG')}</span>
@@ -1083,8 +2056,27 @@ export default function AdminDashboard({
                                 </td>
 
                                 {/* Added by user */}
-                                <td className="p-3 text-gray-400 text-[11px] font-mono">
-                                  {c.addedByUser ? c.addedByUser : 'مزامنة عامة'}
+                                <td className="p-3 text-[11px] font-mono">
+                                  {c.addedByUser ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setUserFilter(c.addedByUser);
+                                        setDbPage(1);
+                                      }}
+                                      className={`px-2 py-0.5 rounded text-[10px] font-mono transition-all text-right inline-flex items-center gap-1 ${
+                                        userFilter === c.addedByUser
+                                          ? 'bg-[#e5c158]/20 text-[#e5c158] border border-[#e5c158]/40 font-bold'
+                                          : 'bg-white/5 text-gray-300 hover:text-white hover:bg-white/10'
+                                      }`}
+                                      title="تصفية وعرض جميع جهات هذا المستخدم فقط"
+                                    >
+                                      <span>{c.addedByUser}</span>
+                                      <Filter className="w-2.5 h-2.5 opacity-60" />
+                                    </button>
+                                  ) : (
+                                    <span className="text-gray-500">مزامنة عامة</span>
+                                  )}
                                 </td>
 
                                 {/* Created At */}
@@ -1394,7 +2386,65 @@ export default function AdminDashboard({
           {/* TAB 6: SYSTEM PARAMETERS AND LIMITS */}
           {activeTab === 'parameters' && (
             <div className="bg-[#0c122b]/80 border border-white/5 rounded-2xl p-5 space-y-6">
-              <h3 className="text-white text-sm font-bold">تعديل قيم وعائدات نظام "معروف"</h3>
+              <div className="flex items-center justify-between pb-3 border-b border-white/5">
+                <span className="text-gray-400 text-xs">تحكم بخصائص الحماية وإلزامية الحساب وعمليات النظام</span>
+                <h3 className="text-white text-sm font-bold">تعديل قيم وإعدادات نظام "معروف"</h3>
+              </div>
+
+              {/* Login Requirement Control (Guest Mode vs Required Phone Login) */}
+              <div className="p-4 rounded-xl bg-gradient-to-r from-[#071948] to-[#0d2a7a] border-2 border-[#ffcc00]/40 space-y-3 shadow-lg">
+                <div className="flex items-center justify-between gap-4">
+                  <button
+                    onClick={() => setLocalSettings({ ...localSettings, requirePhoneLogin: !localSettings.requirePhoneLogin })}
+                    className="text-[#ffcc00] transition-transform active:scale-95 shrink-0"
+                    title={localSettings.requirePhoneLogin ? 'انقر للتعطيل' : 'انقر للتفعيل'}
+                  >
+                    {localSettings.requirePhoneLogin ? <ToggleRight className="w-11 h-11 text-green-400" /> : <ToggleLeft className="w-11 h-11 text-gray-500" />}
+                  </button>
+                  <div className="text-right flex-1">
+                    <div className="flex items-center gap-2 justify-end">
+                      <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${localSettings.requirePhoneLogin ? 'bg-green-500/20 text-green-300 border border-green-500/30' : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30'}`}>
+                        {localSettings.requirePhoneLogin ? 'إلزامية الدخول: مفعلة' : 'وضع الزائر: متاح ومسموح'}
+                      </span>
+                      <span className="text-white text-sm font-extrabold block">إلزامية تسجيل الدخول برقم الهاتف</span>
+                    </div>
+                    <span className="text-gray-300 text-[11px] block mt-1.5 leading-relaxed">
+                      {localSettings.requirePhoneLogin
+                        ? 'مفعل: لا يمكن لأي مستخدم استخدام التطبيق أو البحث أو المزامنة إلا بعد تسجيل الدخول برقم هاتفه.'
+                        : 'معطل: يمكن للمستخدمين الدخول كزوار واستخدام البحث مباشرة بعد مزامنة جهات اتصال هواتفهم دون الحاجة لرقم هاتف.'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Reveal Registrar Global Access Control */}
+              <div className="p-4 rounded-xl bg-gradient-to-r from-[#1c0e35] to-[#2a1352] border-2 border-purple-500/40 space-y-3 shadow-lg">
+                <div className="flex items-center justify-between gap-4">
+                  <button
+                    onClick={() => setLocalSettings({ ...localSettings, allowRevealRegistrarGlobal: !localSettings.allowRevealRegistrarGlobal })}
+                    className="text-purple-400 transition-transform active:scale-95 shrink-0"
+                    title={localSettings.allowRevealRegistrarGlobal ? 'انقر للتعطيل' : 'انقر للتفعيل'}
+                  >
+                    {localSettings.allowRevealRegistrarGlobal ? <ToggleRight className="w-11 h-11 text-purple-400" /> : <ToggleLeft className="w-11 h-11 text-gray-500" />}
+                  </button>
+                  <div className="text-right flex-1">
+                    <div className="flex items-center gap-2 justify-end">
+                      <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${localSettings.allowRevealRegistrarGlobal ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'bg-gray-500/20 text-gray-300 border border-gray-500/30'}`}>
+                        {localSettings.allowRevealRegistrarGlobal ? 'متاح ومجاني للجميع' : 'ميزة مدفوعة للمشتركين فقط'}
+                      </span>
+                      <span className="text-white text-sm font-extrabold flex items-center gap-1.5">
+                        <Award className="w-4 h-4 text-purple-400" />
+                        <span>إتاحة كاشف مسجّل الأرقام لجميع المستخدمين</span>
+                      </span>
+                    </div>
+                    <span className="text-gray-300 text-[11px] block mt-1.5 leading-relaxed">
+                      {localSettings.allowRevealRegistrarGlobal
+                        ? 'مفعل للجميع: يمكن لأي مستخدم في نتائج البحث الضغط على «من سجّل هذا الاسم؟» ومعرفة صاحب الحساب الذي زامن هذا الاسم مجاناً.'
+                        : 'حصر بالمشتركين (VIP): تظل الميزة حصرية للمستخدمين المفعلة لهم خطة باقة كاشف المسجل من لوحة الإدارة، وتظهر نافذة ترقية مع زر تواصل واتساب للبقية.'}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 
@@ -1714,6 +2764,555 @@ export default function AdminDashboard({
                   إلغاء
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* USER PROFILE & FULL CONTROL MODAL */}
+      <AnimatePresence>
+        {editingPlanUser && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto" dir="rtl">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-purple-500/30 bg-[#0c122b] p-6 text-right shadow-[0_20px_60px_rgba(0,0,0,0.9)] space-y-5 my-8 max-h-[92vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setEditingPlanUser(null)}
+                  className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-white text-sm sm:text-base font-bold">ملف المستخدم الشامل وإدارة الحساب والباقات</h3>
+                  <Crown className="w-5 h-5 text-yellow-400" />
+                </div>
+              </div>
+
+              {/* User Header & Quick Actions */}
+              <div className="bg-black/40 border border-white/10 rounded-xl p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const phone = editingPlanUser.phone;
+                        setEditingPlanUser(null);
+                        setUserFilter(phone);
+                        setActiveTab('database');
+                        fetchFullDatabase();
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Database className="w-3.5 h-3.5" />
+                      <span>عرض جهات اتصاله المزامنة</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const id = editingPlanUser.id;
+                        setEditingPlanUser(null);
+                        handleDeleteUser(id);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/30 text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>حذف المستخدم</span>
+                    </button>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="text-[11px] text-gray-400">رقم الهاتف المسجل:</div>
+                    <div className="text-white font-mono font-extrabold text-lg tracking-wider">{editingPlanUser.phone}</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-white/5 text-[11px]">
+                  <div className="bg-white/[0.02] p-2 rounded-lg border border-white/5">
+                    <span className="text-gray-500 block">نوع الجهاز:</span>
+                    <span className="text-gray-200 font-bold">{editingPlanUser.deviceType || 'غير معروف'}</span>
+                  </div>
+                  <div className="bg-white/[0.02] p-2 rounded-lg border border-white/5">
+                    <span className="text-gray-500 block">معرف الجهاز (Device ID):</span>
+                    <span className="text-gray-300 font-mono text-[10px] break-all">{editingPlanUser.deviceId || editingPlanUser.id}</span>
+                  </div>
+                  <div className="bg-white/[0.02] p-2 rounded-lg border border-white/5 col-span-2 sm:col-span-1">
+                    <span className="text-gray-500 block">تاريخ الانضمام:</span>
+                    <span className="text-gray-300 font-mono text-[10px]">
+                      {editingPlanUser.createdAt ? new Date(editingPlanUser.createdAt).toLocaleString('ar-YE') : 'غير متوفر'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 1: Account Balances & General Status Controls */}
+              <div className="p-4 rounded-xl bg-blue-950/20 border border-blue-500/25 space-y-4">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <span className="text-[10px] text-blue-300 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">إعدادات الحساب الأساسية</span>
+                  <h4 className="text-white text-xs font-bold flex items-center gap-1.5">
+                    <span>الأرصدة وحالة الحساب والبحث</span>
+                    <Users className="w-4 h-4 text-blue-400" />
+                  </h4>
+                </div>
+
+                {/* Points & Search Balance Inputs */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5 text-right bg-black/30 p-3 rounded-xl border border-white/5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setUserEditPoints((prev) => prev + 50)}
+                          className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded text-[10px] font-bold cursor-pointer"
+                        >
+                          +50
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setUserEditPoints((prev) => prev + 100)}
+                          className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 rounded text-[10px] font-bold cursor-pointer"
+                        >
+                          +100
+                        </button>
+                      </div>
+                      <label className="text-[11px] text-gray-300 font-bold">رصيد النقاط (Points)</label>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      value={userEditPoints}
+                      onChange={(e) => setUserEditPoints(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full p-2 bg-black/50 border border-white/10 rounded-xl text-white font-mono text-xs focus:border-blue-400 outline-none text-center font-bold"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5 text-right bg-black/30 p-3 rounded-xl border border-white/5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setUserEditSearchBalance((prev) => prev + 20)}
+                          className="px-2 py-0.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded text-[10px] font-bold cursor-pointer"
+                        >
+                          +20
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setUserEditSearchBalance((prev) => prev + 100)}
+                          className="px-2 py-0.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded text-[10px] font-bold cursor-pointer"
+                        >
+                          +100
+                        </button>
+                      </div>
+                      <label className="text-[11px] text-gray-300 font-bold">رصيد عمليات البحث اليومي</label>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      value={userEditSearchBalance}
+                      onChange={(e) => setUserEditSearchBalance(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full p-2 bg-black/50 border border-white/10 rounded-xl text-white font-mono text-xs focus:border-blue-400 outline-none text-center font-bold"
+                    />
+                  </div>
+                </div>
+
+                {/* Status Toggles */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                  <div className="flex items-center justify-between bg-black/30 p-2.5 rounded-xl border border-white/5">
+                    <button
+                      type="button"
+                      onClick={() => setUserEditIsActive(!userEditIsActive)}
+                      className="cursor-pointer"
+                    >
+                      {userEditIsActive ? <ToggleRight className="w-8 h-8 text-emerald-400" /> : <ToggleLeft className="w-8 h-8 text-red-400" />}
+                    </button>
+                    <div className="text-right">
+                      <span className="text-white text-[11px] font-bold block">حالة الحساب</span>
+                      <span className={`text-[10px] font-bold ${userEditIsActive ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {userEditIsActive ? 'نشط ومفعل' : 'محظور / معطل'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between bg-black/30 p-2.5 rounded-xl border border-white/5">
+                    <button
+                      type="button"
+                      onClick={() => setUserEditUnlockedUnlimited(!userEditUnlockedUnlimited)}
+                      className="cursor-pointer"
+                    >
+                      {userEditUnlockedUnlimited ? <ToggleRight className="w-8 h-8 text-amber-400" /> : <ToggleLeft className="w-8 h-8 text-gray-500" />}
+                    </button>
+                    <div className="text-right">
+                      <span className="text-white text-[11px] font-bold block">البحث اللامحدود</span>
+                      <span className={`text-[10px] font-bold ${userEditUnlockedUnlimited ? 'text-amber-400' : 'text-gray-400'}`}>
+                        {userEditUnlockedUnlimited ? 'مفتوح بلا حدود' : 'مقيد بالرصيد'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between bg-black/30 p-2.5 rounded-xl border border-white/5">
+                    <button
+                      type="button"
+                      onClick={() => setUserEditContactsSynced(!userEditContactsSynced)}
+                      className="cursor-pointer"
+                    >
+                      {userEditContactsSynced ? <ToggleRight className="w-8 h-8 text-cyan-400" /> : <ToggleLeft className="w-8 h-8 text-gray-500" />}
+                    </button>
+                    <div className="text-right">
+                      <span className="text-white text-[11px] font-bold block">مزامنة الأسماء</span>
+                      <span className={`text-[10px] font-bold ${userEditContactsSynced ? 'text-cyan-400' : 'text-gray-400'}`}>
+                        {userEditContactsSynced ? 'تمت المزامنة' : 'غير مزامن'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: VIP Features (Reveal Registrar & Delete Names) */}
+              <div className="space-y-3">
+                {/* Quick Preset Actions */}
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] bg-white/[0.02] p-2.5 rounded-xl border border-white/5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlanCanReveal(true);
+                        setPlanCanDelete(true);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-purple-600/30 to-rose-600/30 border border-purple-400/40 text-white font-bold hover:brightness-110 transition-all cursor-pointer"
+                    >
+                      تفعيل الميزتين معاً (شامل)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlanCanReveal(true);
+                        setPlanCanDelete(false);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-200 font-bold hover:bg-purple-600/30 transition-all cursor-pointer"
+                    >
+                      كاشف المسجل فقط
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlanCanReveal(false);
+                        setPlanCanDelete(true);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-rose-600/20 border border-rose-500/30 text-rose-200 font-bold hover:bg-rose-600/30 transition-all cursor-pointer"
+                    >
+                      حذف الأسماء فقط
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlanCanReveal(false);
+                        setPlanCanDelete(false);
+                      }}
+                      className="px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-gray-400 hover:text-white transition-all cursor-pointer"
+                    >
+                      إيقاف VIP
+                    </button>
+                  </div>
+                  <span className="text-yellow-400 font-bold flex items-center gap-1">
+                    <span>باقات وصلاحيات VIP:</span>
+                    <Crown className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+
+                {/* Feature 1: Reveal Registrar */}
+                <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/25 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setPlanCanReveal(!planCanReveal)}
+                      className="text-purple-400 transition-transform active:scale-95 cursor-pointer"
+                    >
+                      {planCanReveal ? <ToggleRight className="w-10 h-10 text-purple-400" /> : <ToggleLeft className="w-10 h-10 text-gray-500" />}
+                    </button>
+                    <div className="text-right">
+                      <span className="text-white text-xs font-bold flex items-center gap-1.5 justify-end">
+                        <span>ميزة كاشف مسجّل الأرقام والأسماء</span>
+                        <Award className="w-3.5 h-3.5 text-purple-400" />
+                      </span>
+                      <span className="text-gray-400 text-[10px]">السماح بمعرفة أرقام وحسابات من قاموا بتسجيل وتزامن الأسماء</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div className="space-y-1 text-right">
+                      <label className="text-[11px] text-gray-300 font-bold">الحد الأقصى للكشف</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={planLimit}
+                        onChange={(e) => setPlanLimit(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-full p-2 bg-black/50 border border-white/10 rounded-xl text-white font-mono text-xs focus:border-purple-400 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1 text-right">
+                      <label className="text-[11px] text-gray-300 font-bold">المستهلك من الكشف</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={planUsed}
+                        onChange={(e) => setPlanUsed(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-full p-2 bg-black/50 border border-white/10 rounded-xl text-white font-mono text-xs focus:border-purple-400 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Feature 2: Delete Names */}
+                <div className="p-3.5 rounded-xl bg-rose-950/20 border border-rose-500/25 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setPlanCanDelete(!planCanDelete)}
+                      className="text-rose-400 transition-transform active:scale-95 cursor-pointer"
+                    >
+                      {planCanDelete ? <ToggleRight className="w-10 h-10 text-rose-400" /> : <ToggleLeft className="w-10 h-10 text-gray-500" />}
+                    </button>
+                    <div className="text-right">
+                      <span className="text-white text-xs font-bold flex items-center gap-1.5 justify-end">
+                        <span>ميزة حذف وإخفاء الأسماء من قاعدة البيانات</span>
+                        <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      </span>
+                      <span className="text-gray-400 text-[10px]">السماح بحذف الأسماء غير المرغوبة من نتائج البحث نهائياً</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div className="space-y-1 text-right">
+                      <label className="text-[11px] text-gray-300 font-bold">الحد الأقصى لحذف الأسماء</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={planDeleteLimit}
+                        onChange={(e) => setPlanDeleteLimit(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-full p-2 bg-black/50 border border-white/10 rounded-xl text-white font-mono text-xs focus:border-rose-400 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1 text-right">
+                      <label className="text-[11px] text-gray-300 font-bold">المستهلك من الحذف</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={planDeleteUsed}
+                        onChange={(e) => setPlanDeleteUsed(Math.max(0, parseInt(e.target.value) || 0))}
+                        className="w-full p-2 bg-black/50 border border-white/10 rounded-xl text-white font-mono text-xs focus:border-rose-400 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleSaveUserPlan}
+                  disabled={savingPlan}
+                  className="flex-1 py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer active:scale-95"
+                >
+                  {savingPlan ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>جاري حفظ التعديلات...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>حفظ كافة التغييرات وتطبيقها فوراً</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingPlanUser(null)}
+                  disabled={savingPlan}
+                  className="px-5 py-3 bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold rounded-xl border border-white/5 transition-all cursor-pointer"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* VIP PLAN ADD / EDIT MODAL */}
+      <AnimatePresence>
+        {isPlanModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm overflow-y-auto" dir="rtl">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="relative w-full max-w-lg overflow-hidden rounded-3xl border-2 border-purple-500/40 bg-[#0c122b] p-6 text-right shadow-[0_20px_60px_rgba(0,0,0,0.9)] space-y-4 my-8"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setIsPlanModalOpen(false)}
+                  className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-white text-base font-black">
+                    {editingPlan ? 'تعديل باقة VIP' : 'إضافة باقة VIP جديدة'}
+                  </h3>
+                  <Crown className="w-5 h-5 text-yellow-400" />
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveVipPlanSubmit} className="space-y-3.5">
+                <div className="space-y-1 text-right">
+                  <label className="text-[11px] text-gray-300 font-bold block">نوع الباقة ومحتواها</label>
+                  <select
+                    value={planFormType}
+                    onChange={(e: any) => setPlanFormType(e.target.value)}
+                    className="w-full p-2.5 bg-black/50 border border-white/10 focus:border-purple-400 rounded-xl text-white text-xs outline-none cursor-pointer"
+                  >
+                    <option value="bundle" className="bg-[#0c122b]">باقة شاملة تجمع الميزتين (كاشف المسجّل + حذف الأسماء)</option>
+                    <option value="reveal_only" className="bg-[#0c122b]">باقة كاشف المسجّل فقط</option>
+                    <option value="delete_only" className="bg-[#0c122b]">باقة حذف الأسماء فقط</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1 text-right">
+                  <label className="text-[11px] text-gray-300 font-bold block">اسم الباقة</label>
+                  <input
+                    type="text"
+                    required
+                    value={planFormName}
+                    onChange={(e) => setPlanFormName(e.target.value)}
+                    placeholder="مثال: باقة المحترفين (Pro VIP)"
+                    className="w-full p-2.5 bg-black/50 border border-white/10 focus:border-purple-400 rounded-xl text-white text-xs outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1 text-right">
+                    <label className="text-[11px] text-gray-300 font-bold block">السعر (ريال يمني)</label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      value={planFormPriceYmr}
+                      onChange={(e) => setPlanFormPriceYmr(Number(e.target.value))}
+                      className="w-full p-2.5 bg-black/50 border border-white/10 focus:border-purple-400 rounded-xl text-white font-mono text-xs outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1 text-right">
+                    <label className="text-[11px] text-gray-300 font-bold block">السعر المعادل ($ USD)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={planFormPriceUsd}
+                      onChange={(e) => setPlanFormPriceUsd(Number(e.target.value))}
+                      className="w-full p-2.5 bg-black/50 border border-white/10 focus:border-purple-400 rounded-xl text-white font-mono text-xs outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {planFormType !== 'delete_only' && (
+                    <div className="space-y-1 text-right">
+                      <label className="text-[11px] text-purple-300 font-bold block">عدد عمليات كشف المسجّل</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={planFormReveals}
+                        onChange={(e) => setPlanFormReveals(Number(e.target.value))}
+                        className="w-full p-2.5 bg-black/50 border border-purple-500/30 focus:border-purple-400 rounded-xl text-white font-mono text-xs outline-none"
+                      />
+                    </div>
+                  )}
+
+                  {planFormType !== 'reveal_only' && (
+                    <div className="space-y-1 text-right">
+                      <label className="text-[11px] text-rose-300 font-bold block">عدد عمليات حذف الأسماء 🗑️</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={planFormNameDeletions}
+                        onChange={(e) => setPlanFormNameDeletions(Number(e.target.value))}
+                        className="w-full p-2.5 bg-black/50 border border-rose-500/30 focus:border-rose-400 rounded-xl text-white font-mono text-xs outline-none"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1 text-right">
+                  <label className="text-[11px] text-gray-300 font-bold block">شارة تميز (Badge)</label>
+                  <input
+                    type="text"
+                    value={planFormBadge}
+                    onChange={(e) => setPlanFormBadge(e.target.value)}
+                    placeholder="مثال: الأكثر طلباً ⭐ أو أفضل قيمة 👑"
+                    className="w-full p-2.5 bg-black/50 border border-white/10 focus:border-purple-400 rounded-xl text-white text-xs outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1 text-right">
+                  <label className="text-[11px] text-gray-300 font-bold block">ما تقدمه الباقة (الوصف المختصر)</label>
+                  <input
+                    type="text"
+                    required
+                    value={planFormDescription}
+                    onChange={(e) => setPlanFormDescription(e.target.value)}
+                    placeholder="كشف هوية ورقم مسجّل الاسم لـ 35 عملية + حذف 3 أسماء"
+                    className="w-full p-2.5 bg-black/50 border border-white/10 focus:border-purple-400 rounded-xl text-white text-xs outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1 text-right">
+                  <label className="text-[11px] text-gray-300 font-bold block">المزايا المضمنة (اكتب كل ميزة في سطر)</label>
+                  <textarea
+                    rows={4}
+                    value={planFormFeaturesText}
+                    onChange={(e) => setPlanFormFeaturesText(e.target.value)}
+                    placeholder="كشف هوية ورقم من قام بحفظ الاسم&#10;حذف وإخفاء الأسماء غير المرغوبة&#10;أولوية في معالجة الطلبات"
+                    className="w-full p-2.5 bg-black/50 border border-white/10 focus:border-purple-400 rounded-xl text-white text-xs outline-none font-sans leading-relaxed"
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 pt-3">
+                  <button
+                    type="submit"
+                    disabled={savingVipPlan}
+                    className="flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs rounded-xl shadow-lg transition-all flex items-center justify-center gap-1.5 disabled:opacity-60 cursor-pointer active:scale-95"
+                  >
+                    {savingVipPlan ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>جاري حفظ الباقة...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>{editingPlan ? 'حفظ تعديلات الباقة' : 'نشر وتفعيل الباقة فوراً'}</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsPlanModalOpen(false)}
+                    disabled={savingVipPlan}
+                    className="px-5 py-2.5 bg-white/5 hover:bg-white/10 text-gray-300 text-xs font-bold rounded-xl border border-white/5 transition-all cursor-pointer"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}

@@ -4,6 +4,7 @@ import { ShieldCheck, Smartphone, ShieldAlert, RefreshCw, X } from 'lucide-react
 import { User } from '../types';
 import { safeFetchJson } from '../utils/apiHelper';
 import { APP_LOGO } from '../assets/logoBase64';
+import { getFullDeviceSpecs } from '../utils/deviceFingerprint';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -29,32 +30,15 @@ export default function AuthModal({
   const [simulatedOtp, setSimulatedOtp] = useState('');
   const [userOtpInput, setUserOtpInput] = useState('');
 
-  // Auto-generate realistic device identifiers on load to enforce Device Binding!
+  // Compute deterministic hardware device fingerprint & real device model on load
   useEffect(() => {
-    const userAgent = navigator.userAgent;
-    let browserName = "Chrome";
-    if (userAgent.indexOf("Safari") > -1 && userAgent.indexOf("Chrome") === -1) browserName = "Safari";
-    else if (userAgent.indexOf("Firefox") > -1) browserName = "Firefox";
-    else if (userAgent.indexOf("Edge") > -1) browserName = "Edge";
-
-    let deviceModel = "جوال أندرويد ذكي";
-    if (/iPhone|iPad|iPod/i.test(userAgent)) deviceModel = "iPhone 15 Pro Max";
-    else if (/Windows/i.test(userAgent)) deviceModel = "كمبيوتر شخصي Windows";
-    else if (/Macintosh/i.test(userAgent)) deviceModel = "جهاز Apple Mac Book";
-
-    // Create a stable unique device fingerprint stored in localStorage so it persists on the device!
-    let storedDeviceId = localStorage.getItem('maarouf_device_fingerprint');
-    if (!storedDeviceId) {
-      storedDeviceId = 'mv_' + Math.random().toString(36).substring(2, 15) + '_' + Date.now().toString().substring(8);
-      localStorage.setItem('maarouf_device_fingerprint', storedDeviceId);
-    }
-
+    const specs = getFullDeviceSpecs();
     setDeviceSpecs({
-      id: storedDeviceId,
-      type: deviceModel,
-      browser: browserName
+      id: specs.deviceId,
+      type: specs.deviceType,
+      browser: specs.browser
     });
-  }, []);
+  }, [isOpen]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();

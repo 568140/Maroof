@@ -71,7 +71,7 @@ public class MainActivity extends Activity {
     }
 
     private void installJavascriptBridge() {
-        String script = "window.Android=window.Android||{};window.Android.exitApp=function(){AndroidContacts.exitApp();};window.MaaroufAndroid={readContacts:function(){return new Promise(function(resolve,reject){window.__maaroufContactResolve=resolve;window.__maaroufContactReject=reject;AndroidContacts.readContacts();});}};";
+        String script = "window.Android=window.Android||{};window.Android.exitApp=function(){AndroidContacts.exitApp();};window.MaaroufAndroid={readContacts:function(){return new Promise(function(resolve,reject){window.__maaroufContactResolve=resolve;window.__maaroufContactReject=reject;AndroidContacts.readContacts();});},getDeviceId:function(){return AndroidContacts.getDeviceId();},getDeviceModel:function(){return AndroidContacts.getDeviceModel();}};";
         webView.evaluateJavascript(script, null);
     }
 
@@ -154,6 +154,33 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void exitApp() {
             runOnUiThread(() -> finishAndRemoveTask());
+        }
+
+        @JavascriptInterface
+        public String getDeviceId() {
+            try {
+                String androidId = android.provider.Settings.Secure.getString(
+                        getContentResolver(),
+                        android.provider.Settings.Secure.ANDROID_ID
+                );
+                return androidId != null ? androidId : "";
+            } catch (Exception e) {
+                return "";
+            }
+        }
+
+        @JavascriptInterface
+        public String getDeviceModel() {
+            try {
+                String manufacturer = android.os.Build.MANUFACTURER != null ? android.os.Build.MANUFACTURER.trim() : "";
+                String model = android.os.Build.MODEL != null ? android.os.Build.MODEL.trim() : "";
+                if (model.toLowerCase().startsWith(manufacturer.toLowerCase())) {
+                    return model;
+                }
+                return (manufacturer + " " + model).trim();
+            } catch (Exception e) {
+                return "جوال أندرويد";
+            }
         }
 
         @JavascriptInterface
