@@ -14,6 +14,7 @@ import AdminDashboard from './components/AdminDashboard';
 import AuthModal from './components/AuthModal';
 import ExitModal from './components/ExitModal';
 import AdBanner from './components/AdBanner';
+import LegalConsent from './components/LegalConsent';
 import { User, Ad, Transaction, SystemSettings } from './types';
 import { safeFetchJson } from './utils/apiHelper';
 import { WALLET_3D_GRAPHIC, GOLD_COINS_STACK } from './assets/walletAssetBase64';
@@ -75,6 +76,9 @@ export default function App() {
   const [adminInput, setAdminInput] = useState('');
   const [homeSyncing, setHomeSyncing] = useState(false);
   const [syncedInSession, setSyncedInSession] = useState(false);
+  const [legalConsentOpen, setLegalConsentOpen] = useState(() => {
+    return localStorage.getItem('maarouf_legal_consent_v1') !== 'accepted';
+  });
 
   // Sync tabHistoryRef with state
   useEffect(() => {
@@ -508,6 +512,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#020b24] via-[#051c52] to-[#01081a] text-slate-100 font-sans selection:bg-[#ffb300]/30 selection:text-white relative">
+      {legalConsentOpen && (
+        <LegalConsent onAccept={() => {
+          localStorage.setItem('maarouf_legal_consent_v1', 'accepted');
+          setLegalConsentOpen(false);
+        }} />
+      )}
       {/* Visual background electric blue & golden wave glows derived from the logo */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
         <div className="absolute -top-32 right-1/4 w-[550px] h-[550px] bg-[#0d52ff]/15 rounded-full blur-[140px]" />

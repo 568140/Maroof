@@ -10,3 +10,7 @@ android/.gradle/
 android/**/build/
 *.apk
 emulator-*.png
+# Local Android signing secrets
+android/keystore.properties
+keys/
+*.jks
