@@ -146,7 +146,7 @@ export default function Header({
           <div className="flex items-center justify-between pb-6 border-b border-white/5">
             <div className="flex items-center gap-2.5">
               <img 
-                src="/logo.png" 
+                src="./logo.webp" 
                 alt="شعار معروف" 
                 className="w-8 h-8 rounded-lg object-cover border border-[#ffcc00]/40 shadow-sm"
               />
