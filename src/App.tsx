@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Search, Smartphone, Award, HelpCircle, ShieldCheck, Cpu, LogOut, CheckCircle, 
+  Search, Smartphone, Award, HelpCircle, ShieldCheck, LogOut, CheckCircle, 
   AlertCircle, Sparkles, Coins, KeyRound, Globe, ArrowRight, Settings, Info,
   Wallet, Gift, Copy, Check
 } from 'lucide-react';
@@ -650,36 +650,6 @@ export default function App() {
                       </div>
                     </div>
 
-                  </div>
-                </div>
-
-                {/* Device parameters details */}
-                <div className="bg-gradient-to-br from-[#0c122b]/80 to-[#070b1a] border border-white/5 rounded-2xl p-5 space-y-3">
-                  <h4 className="text-white text-xs font-extrabold flex items-center gap-1.5 justify-end">
-                    <span>خصائص الجهاز الحالي المرتبط</span>
-                    <Cpu className="w-4 h-4 text-[#e5c158]" />
-                  </h4>
-                  
-                  <div className="divide-y divide-white/5 text-xs text-gray-300">
-                    <div className="py-2.5 flex justify-between items-center font-mono">
-                      <span className="text-white text-[10px] truncate max-w-[150px]">{currentUser.deviceId}</span>
-                      <span className="text-gray-500 font-sans">معرف الجهاز البيومتري</span>
-                    </div>
-
-                    <div className="py-2.5 flex justify-between items-center">
-                      <span className="text-white font-bold">{currentUser.deviceType}</span>
-                      <span className="text-gray-500">طراز الجوال والعتاد</span>
-                    </div>
-
-                    <div className="py-2.5 flex justify-between items-center">
-                      <span className="text-white font-bold">{currentUser.browser}</span>
-                      <span className="text-gray-500">المتصفح النشط</span>
-                    </div>
-
-                    <div className="py-2.5 flex justify-between items-center font-mono">
-                      <span className="text-white text-xs">{new Date(currentUser.createdAt).toLocaleDateString('ar-YE')}</span>
-                      <span className="text-gray-500 font-sans">تاريخ التسجيل</span>
-                    </div>
                   </div>
                 </div>
 
