@@ -71,8 +71,21 @@ public class MainActivity extends Activity {
     }
 
     private void installJavascriptBridge() {
-        String script = "window.MaaroufAndroid={readContacts:function(){return new Promise(function(resolve,reject){window.__maaroufContactResolve=resolve;window.__maaroufContactReject=reject;AndroidContacts.readContacts();});}};";
+        String script = "window.Android=window.Android||{};window.Android.exitApp=function(){AndroidContacts.exitApp();};window.MaaroufAndroid={readContacts:function(){return new Promise(function(resolve,reject){window.__maaroufContactResolve=resolve;window.__maaroufContactReject=reject;AndroidContacts.readContacts();});}};";
         webView.evaluateJavascript(script, null);
+    }
+
+    @Override
+    public void onBackPressed() {
+        // The React app uses history.pushState/popstate for its own tabs,
+        // drawers, dialogs, and double-back exit confirmation. Going back in
+        // WebView history delivers the physical Android back press to that
+        // controller instead of closing the Activity immediately.
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
+        } else {
+            super.onBackPressed();
+        }
     }
 
     private void sendContactsToJavascript(final String contactsJson) {
@@ -138,6 +151,11 @@ public class MainActivity extends Activity {
     }
 
     public class ContactsBridge {
+        @JavascriptInterface
+        public void exitApp() {
+            runOnUiThread(() -> finishAndRemoveTask());
+        }
+
         @JavascriptInterface
         public void readContacts() {
             if (android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
