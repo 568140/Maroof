@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getFirestore, 
@@ -19,27 +17,30 @@ import {
   getCountFromServer
 } from 'firebase/firestore';
 import { User, Contact, Ad, Transaction, SystemSettings, AnalyticsStats, PlatformMetrics, VipPlan, DeletedNameRecord } from './types';
+import firebaseAppletConfig from '../firebase-applet-config.json';
 
-// Load Firebase configuration dynamically from firebase-applet-config.json or use fallback
-let firebaseConfig: any = {
-  projectId: process.env.FIREBASE_PROJECT_ID || "master-carport-g71nt",
-  appId: process.env.FIREBASE_APP_ID || "1:731432445526:web:f698b6f50b497cf99f3df7",
-  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyD7unLBRol7TacRbiDF2WJMnmk84n5W02c",
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "master-carport-g71nt.firebaseapp.com",
-  firestoreDatabaseId: process.env.FIREBASE_DATABASE_ID || "ai-studio-maarouf-5ead1727-a3c3-4a44-8734-29127a39a53b",
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "master-carport-g71nt.firebasestorage.app",
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "731432445526",
+const getEnv = (key: string): string | undefined => {
+  try {
+    if (typeof process !== 'undefined' && process.env && process.env[key]) {
+      return process.env[key];
+    }
+  } catch {
+    // Ignore in browser environments
+  }
+  return undefined;
 };
 
-try {
-  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-  if (fs.existsSync(configPath)) {
-    const loaded = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    firebaseConfig = { ...firebaseConfig, ...loaded };
-  }
-} catch (err) {
-  console.error('Error loading firebase-applet-config.json:', err);
-}
+// Load Firebase configuration from firebase-applet-config.json or fallback
+const firebaseConfig: any = {
+  ...firebaseAppletConfig,
+  projectId: getEnv('FIREBASE_PROJECT_ID') || firebaseAppletConfig.projectId || "master-carport-g71nt",
+  appId: getEnv('FIREBASE_APP_ID') || firebaseAppletConfig.appId || "1:731432445526:web:f698b6f50b497cf99f3df7",
+  apiKey: getEnv('FIREBASE_API_KEY') || firebaseAppletConfig.apiKey || "AIzaSyD7unLBRol7TacRbiDF2WJMnmk84n5W02c",
+  authDomain: getEnv('FIREBASE_AUTH_DOMAIN') || firebaseAppletConfig.authDomain || "master-carport-g71nt.firebaseapp.com",
+  firestoreDatabaseId: getEnv('FIREBASE_DATABASE_ID') || firebaseAppletConfig.firestoreDatabaseId || "ai-studio-maarouf-5ead1727-a3c3-4a44-8734-29127a39a53b",
+  storageBucket: getEnv('FIREBASE_STORAGE_BUCKET') || firebaseAppletConfig.storageBucket || "master-carport-g71nt.firebasestorage.app",
+  messagingSenderId: getEnv('FIREBASE_MESSAGING_SENDER_ID') || firebaseAppletConfig.messagingSenderId || "731432445526",
+};
 
 // Initialize Firebase SDK
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -194,10 +195,11 @@ export class DbService {
   }
 
   public static async getUserByDeviceId(deviceId: string): Promise<User | undefined> {
-    const q = query(collection(db, 'users'), where('deviceId', '==', deviceId), limit(1));
+    const q = query(collection(db, 'users'), where('deviceId', '==', deviceId));
     const snap = await getDocs(q);
     if (snap.empty) return undefined;
-    return snap.docs[0].data() as User;
+    const users = snap.docs.map(d => d.data() as User);
+    return users.find(u => !u.isGuest) || users[0];
   }
 
   public static async getOrCreateGuestUser(deviceId: string, deviceType?: string, browser?: string): Promise<User> {

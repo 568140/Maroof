@@ -4,6 +4,7 @@ import { Search, Info, Users, Database, ShieldAlert, Coins, Copy, Check, Refresh
 import { User, Contact, Ad, PlatformMetrics, SystemSettings, VipPlan } from '../types';
 import { APP_LOGO } from '../assets/logoBase64';
 import { registerBackHandler } from '../utils/backNavigation';
+import { apiFetch } from '../utils/apiHelper';
 
 interface SearchSectionProps {
   currentUser: User | null;
@@ -101,7 +102,7 @@ export default function SearchSection({
   // Fetch live metrics from server
   const fetchLiveMetrics = useCallback(async () => {
     try {
-      const res = await fetch('/api/metrics');
+      const res = await apiFetch('/api/metrics');
       if (res.ok) {
         const data: PlatformMetrics = await res.json();
         setPlatformMetrics(data);
@@ -129,7 +130,7 @@ export default function SearchSection({
 
   // Fetch active VIP plans for package selection in modal
   useEffect(() => {
-    fetch('/api/vip-plans')
+    apiFetch('/api/vip-plans')
       .then(r => r.json())
       .then((data: VipPlan[]) => {
         if (Array.isArray(data) && data.length > 0) {
@@ -180,7 +181,7 @@ export default function SearchSection({
   const handleConvertPoints = async (option: string) => {
     if (!currentUser) return;
     try {
-      const res = await fetch('/api/user/convert-points', {
+      const res = await apiFetch('/api/user/convert-points', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: currentUser.phone, option })
@@ -255,7 +256,7 @@ export default function SearchSection({
       
       for (let i = 0; i < 6; i++) {
         const adId = adsList.length > 0 ? adsList[i % adsList.length]?.id : `ad${(i % 4) + 1}`;
-        await fetch('/api/ads/view', {
+        await apiFetch('/api/ads/view', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ adId, phone: currentUser.phone })
@@ -378,7 +379,7 @@ export default function SearchSection({
     try {
       setRevealingContactId(contactKey);
       const token = localStorage.getItem('maarouf_token') || '';
-      const res = await fetch('/api/contacts/reveal-registrar', {
+      const res = await apiFetch('/api/contacts/reveal-registrar', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -457,7 +458,7 @@ export default function SearchSection({
 
     try {
       setIsDeleting(true);
-      const res = await fetch('/api/contacts/delete-name', {
+      const res = await apiFetch('/api/contacts/delete-name', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { User, Ad, Transaction } from '../types';
 import { registerBackHandler } from '../utils/backNavigation';
+import { apiFetch } from '../utils/apiHelper';
 import { GOLD_COINS_STACK } from '../assets/walletAssetBase64';
 import {
   REWARDS_GIFT_3D,
@@ -68,7 +69,7 @@ export default function RewardsSection({
 
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/user/convert-points', {
+      const res = await apiFetch('/api/user/convert-points', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: currentUser.phone, option }),
@@ -777,7 +778,7 @@ export default function RewardsSection({
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => {
-                    fetch('/api/ads/click', {
+                    apiFetch('/api/ads/click', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ adId: activeAd.id }),

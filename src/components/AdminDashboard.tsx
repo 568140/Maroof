@@ -6,6 +6,7 @@ import {
   Download, FileSpreadsheet, Copy, ChevronLeft, ChevronRight, Filter, Key, Award, ExternalLink, Crown
 } from 'lucide-react';
 import { User, Contact, Ad, SystemSettings, AnalyticsStats, VipPlan, DeletedNameRecord } from '../types';
+import { apiFetch } from '../utils/apiHelper';
 
 interface AdminDashboardProps {
   adminToken: string;
@@ -168,7 +169,7 @@ export default function AdminDashboard({
     if (!editingPlanUser) return;
     setSavingPlan(true);
     try {
-      const res = await fetch('/api/admin/users/plan', {
+      const res = await apiFetch('/api/admin/users/plan', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -217,12 +218,12 @@ export default function AdminDashboard({
       const headers = { 'x-admin-token': adminToken };
 
       const [statsRes, usersRes, contactsRes, adsRes, plansRes, deletedRes] = await Promise.all([
-        fetch('/api/admin/stats', { headers }).then(r => r.json()),
-        fetch('/api/admin/users', { headers }).then(r => r.json()),
-        fetch('/api/admin/contacts', { headers }).then(r => r.json()),
-        fetch('/api/ads').then(r => r.json()), // ads can be public
-        fetch('/api/vip-plans').then(r => r.json()).catch(() => []),
-        fetch('/api/admin/deleted-names', { headers }).then(r => r.json()).catch(() => [])
+        apiFetch('/api/admin/stats', { headers }).then(r => r.json()),
+        apiFetch('/api/admin/users', { headers }).then(r => r.json()),
+        apiFetch('/api/admin/contacts', { headers }).then(r => r.json()),
+        apiFetch('/api/ads').then(r => r.json()), // ads can be public
+        apiFetch('/api/vip-plans').then(r => r.json()).catch(() => []),
+        apiFetch('/api/admin/deleted-names', { headers }).then(r => r.json()).catch(() => [])
       ]);
 
       if (statsRes && statsRes.error) {
@@ -308,7 +309,7 @@ export default function AdminDashboard({
         setBulkDeletedLoading(true);
       }
 
-      const res = await fetch('/api/admin/deleted-names/action', {
+      const res = await apiFetch('/api/admin/deleted-names/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
         body: JSON.stringify({ recordIds, action })
@@ -386,7 +387,7 @@ export default function AdminDashboard({
         order: editingPlan?.order || (vipPlans.length + 1)
       };
 
-      const res = await fetch('/api/admin/vip-plans', {
+      const res = await apiFetch('/api/admin/vip-plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
         body: JSON.stringify(planPayload)
@@ -397,7 +398,7 @@ export default function AdminDashboard({
       showToast('تم حفظ وتحديث بيانات الباقة بنجاح!', 'success');
       setIsPlanModalOpen(false);
       setEditingPlan(null);
-      const updated = await fetch('/api/vip-plans').then(r => r.json());
+      const updated = await apiFetch('/api/vip-plans').then(r => r.json());
       setVipPlans(Array.isArray(updated) ? updated : []);
     } catch (err: any) {
       showToast(err.message || 'حدث خطأ أثناء حفظ الباقة.', 'error');
@@ -409,7 +410,7 @@ export default function AdminDashboard({
   const handleDeleteVipPlan = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذه الباقة؟')) return;
     try {
-      const res = await fetch(`/api/admin/vip-plans/${id}`, {
+      const res = await apiFetch(`/api/admin/vip-plans/${id}`, {
         method: 'DELETE',
         headers: { 'x-admin-token': adminToken }
       });
@@ -426,7 +427,7 @@ export default function AdminDashboard({
   const handleToggleVipPlanStatus = async (plan: VipPlan) => {
     try {
       const updatedPlan = { ...plan, isActive: !plan.isActive };
-      const res = await fetch('/api/admin/vip-plans', {
+      const res = await apiFetch('/api/admin/vip-plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
         body: JSON.stringify(updatedPlan)
@@ -455,7 +456,7 @@ export default function AdminDashboard({
   const handleExecuteReset = async () => {
     try {
       setResetting(true);
-      const res = await fetch('/api/admin/reset-stats', {
+      const res = await apiFetch('/api/admin/reset-stats', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -483,7 +484,7 @@ export default function AdminDashboard({
   // Handle User Toggle Status
   const handleToggleUser = async (userId: string) => {
     try {
-      const res = await fetch('/api/admin/users/toggle-status', {
+      const res = await apiFetch('/api/admin/users/toggle-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
         body: JSON.stringify({ userId })
@@ -504,7 +505,7 @@ export default function AdminDashboard({
   // Handle Grant Points manually
   const handleGrantPoints = async (userId: string, amount: number) => {
     try {
-      const res = await fetch('/api/admin/users/grant-points', {
+      const res = await apiFetch('/api/admin/users/grant-points', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
         body: JSON.stringify({ userId, amount })
@@ -526,7 +527,7 @@ export default function AdminDashboard({
   const handleDeleteUser = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف حساب هذا المستخدم نهائياً؟')) return;
     try {
-      const res = await fetch(`/api/admin/users/${id}`, {
+      const res = await apiFetch(`/api/admin/users/${id}`, {
         method: 'DELETE',
         headers: { 'x-admin-token': adminToken }
       }).then(r => r.json());
@@ -551,7 +552,7 @@ export default function AdminDashboard({
       return;
     }
     try {
-      const res = await fetch('/api/admin/contacts', {
+      const res = await apiFetch('/api/admin/contacts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
         body: JSON.stringify({ phoneNumber: newContactPhone, contactName: newContactName })
@@ -575,7 +576,7 @@ export default function AdminDashboard({
   const handleDeleteContact = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف هذه الهوية من قاعدة البيانات العامة؟')) return;
     try {
-      const res = await fetch(`/api/admin/contacts/${id}`, {
+      const res = await apiFetch(`/api/admin/contacts/${id}`, {
         method: 'DELETE',
         headers: { 'x-admin-token': adminToken }
       }).then(r => r.json());
@@ -606,7 +607,7 @@ export default function AdminDashboard({
       return;
     }
     try {
-      const res = await fetch('/api/admin/contacts/edit', {
+      const res = await apiFetch('/api/admin/contacts/edit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
         body: JSON.stringify({ 
@@ -660,7 +661,7 @@ export default function AdminDashboard({
     }
 
     try {
-      const res = await fetch('/api/admin/contacts/bulk', {
+      const res = await apiFetch('/api/admin/contacts/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
         body: JSON.stringify({ contacts: parsed })
@@ -684,7 +685,7 @@ export default function AdminDashboard({
     if (!adminToken) return;
     setDbLoading(true);
     try {
-      const res = await fetch('/api/admin/contacts', {
+      const res = await apiFetch('/api/admin/contacts', {
         headers: { 'x-admin-token': adminToken }
       });
       const data = await res.json();
@@ -783,7 +784,7 @@ export default function AdminDashboard({
       return;
     }
     try {
-      const res = await fetch('/api/admin/ads', {
+      const res = await apiFetch('/api/admin/ads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
         body: JSON.stringify({
@@ -815,7 +816,7 @@ export default function AdminDashboard({
   // Ads CRUD: Toggle Active status
   const handleToggleAd = async (adId: string) => {
     try {
-      const res = await fetch('/api/admin/ads/toggle', {
+      const res = await apiFetch('/api/admin/ads/toggle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-token': adminToken },
         body: JSON.stringify({ adId })
@@ -837,7 +838,7 @@ export default function AdminDashboard({
   const handleDeleteAd = async (id: string) => {
     if (!confirm('هل أنت متأكد من حذف الإعلان نهائياً؟')) return;
     try {
-      const res = await fetch(`/api/admin/ads/${id}`, {
+      const res = await apiFetch(`/api/admin/ads/${id}`, {
         method: 'DELETE',
         headers: { 'x-admin-token': adminToken }
       }).then(r => r.json());

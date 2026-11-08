@@ -1,42 +1,87 @@
+import { handleClientApiRequest } from './clientApiFallback';
+
+const apiBase = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
+
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+
+  let apiPath: string | null = null;
+  if (rawUrl.startsWith('/api/')) {
+    apiPath = rawUrl;
+  } else {
+    try {
+      const parsed = new URL(rawUrl, window.location.origin);
+      if (parsed.pathname.startsWith('/api/')) {
+        apiPath = parsed.pathname + parsed.search;
+      }
+    } catch {
+      // Ignore invalid URL
+    }
+  }
+
+  if (apiPath) {
+    const isLocalApkOrigin =
+      window.location.protocol === 'file:' ||
+      window.location.hostname === 'appassets.androidplatform.net';
+
+    if (isLocalApkOrigin && !apiBase) {
+      return handleClientApiRequest(apiPath, init);
+    }
+
+    const targetUrl = apiBase && rawUrl.startsWith('/api/') ? `${apiBase}${rawUrl}` : rawUrl;
+    try {
+      const res = await window.fetch(targetUrl, {
+        credentials: 'same-origin',
+        ...init,
+      });
+      const contentType = res.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        return res;
+      }
+      return await handleClientApiRequest(apiPath, init);
+    } catch {
+      return await handleClientApiRequest(apiPath, init);
+    }
+  }
+
+  return window.fetch(input, init);
+}
+
 export async function safeFetchJson(url: string, options?: RequestInit): Promise<any> {
   let response: Response;
   try {
-    response = await fetch(url, options);
-  } catch (netErr: any) {
-    throw new Error('تعذر الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت.');
+    response = await apiFetch(url, options);
+  } catch {
+    try {
+      response = await handleClientApiRequest(url, options);
+    } catch {
+      throw new Error('تعذر الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت.');
+    }
   }
 
   const contentType = response.headers.get('content-type') || '';
-  
-  if (contentType.includes('application/json')) {
+
+  if (!contentType.includes('application/json')) {
     try {
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || `خطأ من الخادم (${response.status})`);
-      }
-      return data;
-    } catch (err: any) {
-      if (!response.ok) {
-        throw new Error(err.message || `خطأ في استجابة الخادم (${response.status})`);
-      }
+      response = await handleClientApiRequest(url, options);
+    } catch {
+      throw new Error(`خطأ في استجابة الخادم (${response.status}).`);
+    }
+  }
+
+  const finalContentType = response.headers.get('content-type') || '';
+  if (finalContentType.includes('application/json')) {
+    let data: any;
+    try {
+      data = await response.json();
+    } catch {
       throw new Error('استجابة الخادم تحتوي على صيغة بيانات غير صالحة.');
     }
-  } else {
-    // If response is HTML or non-JSON (e.g. 404 from static host like Vercel without API route configured)
-    const text = await response.text().catch(() => '');
-    console.error('Non-JSON response received from server:', response.status, text);
-    
-    let extra = '';
-    if (text.includes('FUNCTION_INVOCATION_FAILED')) {
-      extra = ' - تعذر استدعاء دالة Vercel Serverless';
-    } else if (text.includes('FUNCTION_INVOCATION_TIMEOUT')) {
-      extra = ' - استغرق الطلب وقتاً أطول من المسموح';
+    if (!response.ok) {
+      throw new Error(data?.error || data?.message || `خطأ من الخادم (${response.status})`);
     }
-
-    if (response.status === 404) {
-      throw new Error('لم يتم العثور على مسار الخدمة البرمجية (API 404).' + extra);
-    }
-    
-    throw new Error(`خطأ من خادم الاستضافة (${response.status})${extra}: لم يتم إرجاع استجابة JSON من الخادم.`);
+    return data;
   }
+
+  throw new Error(`خطأ من الخادم (${response.status}).`);
 }

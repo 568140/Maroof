@@ -62,24 +62,14 @@ export default function Header({
         <div className="flex items-center gap-3">
           {currentUser ? (
             <div className="flex items-center gap-2 sm:gap-3">
-              {currentUser.isGuest ? (
-                <button
-                  onClick={onOpenAuth}
-                  className="px-2.5 py-1 text-[11px] font-bold text-slate-950 bg-gradient-to-r from-[#ffcc00] to-[#f59e0b] rounded-lg shadow-sm hover:brightness-110 transition-all flex items-center gap-1"
-                  title="ربط الحساب برقم هاتف لحفظ بياناتك"
-                >
-                  <span>تسجيل الدخول</span>
-                </button>
-              ) : (
-                /* Point badge */
-                <div 
-                  onClick={() => setActiveTab('rewards')}
-                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0a2368] border border-[#ffcc00]/40 text-xs text-[#ffcc00] font-bold cursor-pointer hover:border-[#ffcc00] shadow-[0_0_10px_rgba(255,204,0,0.2)] transition-all"
-                >
-                  <Coins className="w-3.5 h-3.5" />
-                  <span>{currentUser.points} نقطة</span>
-                </div>
-              )}
+              {/* Point badge */}
+              <div 
+                onClick={() => setActiveTab('rewards')}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0a2368] border border-[#ffcc00]/40 text-xs text-[#ffcc00] font-bold cursor-pointer hover:border-[#ffcc00] shadow-[0_0_10px_rgba(255,204,0,0.2)] transition-all"
+              >
+                <Coins className="w-3.5 h-3.5" />
+                <span>{currentUser.points} نقطة</span>
+              </div>
 
               {/* Free search balance badge */}
               <div className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#071948] border border-[#0d52ff]/30 text-[11px] text-white">

@@ -16,7 +16,7 @@ import ExitModal from './components/ExitModal';
 import AdBanner from './components/AdBanner';
 import LegalConsent from './components/LegalConsent';
 import { User, Ad, Transaction, SystemSettings } from './types';
-import { safeFetchJson } from './utils/apiHelper';
+import { safeFetchJson, apiFetch } from './utils/apiHelper';
 import { WALLET_3D_GRAPHIC, GOLD_COINS_STACK } from './assets/walletAssetBase64';
 import { 
   registerBackHandler, 
@@ -79,7 +79,6 @@ export default function App() {
   const [legalConsentOpen, setLegalConsentOpen] = useState(() => {
     return localStorage.getItem('maarouf_legal_consent_v1') !== 'accepted';
   });
-  const syncAttemptedRef = useRef(false);
 
   // Sync tabHistoryRef with state
   useEffect(() => {
@@ -225,14 +224,14 @@ export default function App() {
       try {
         // Fetch Settings
         let loadedSettings: SystemSettings = DEFAULT_SETTINGS;
-        const settingsRes = await fetch('/api/settings');
+        const settingsRes = await apiFetch('/api/settings');
         if (settingsRes.ok) {
           loadedSettings = await settingsRes.json();
           setSystemSettings(loadedSettings);
         }
 
         // Fetch Ads
-        const adsRes = await fetch('/api/ads');
+        const adsRes = await apiFetch('/api/ads');
         if (adsRes.ok) {
           const aData = await adsRes.json();
           setAdsList(aData);
@@ -241,19 +240,20 @@ export default function App() {
         // Compute deterministic hardware device fingerprint & device model
         const hwSpecs = getFullDeviceSpecs();
         const deviceFingerprint = hwSpecs.deviceId;
+        localStorage.removeItem('maarouf_logged_out');
 
         const savedPhone = localStorage.getItem('maarouf_phone_session');
         let userFound: User | null = null;
 
         if (savedPhone) {
-          const meRes = await fetch(
+          const meRes = await apiFetch(
             `/api/auth/me?phone=${encodeURIComponent(savedPhone)}&deviceId=${encodeURIComponent(deviceFingerprint)}&deviceType=${encodeURIComponent(hwSpecs.deviceType)}&browser=${encodeURIComponent(hwSpecs.browser)}`
           );
           if (meRes.ok) {
             userFound = await meRes.json();
           }
         } else if (deviceFingerprint) {
-          const meRes = await fetch(`/api/auth/me?deviceId=${encodeURIComponent(deviceFingerprint)}`);
+          const meRes = await apiFetch(`/api/auth/me?deviceId=${encodeURIComponent(deviceFingerprint)}`);
           if (meRes.ok) {
             const u = await meRes.json();
             if (loadedSettings?.requirePhoneLogin && u.isGuest) {
@@ -266,7 +266,7 @@ export default function App() {
 
         // If no registered user found and phone login is NOT required by Admin, initialize guest user!
         if (!userFound && loadedSettings && !loadedSettings.requirePhoneLogin) {
-          const guestRes = await fetch(
+          const guestRes = await apiFetch(
             `/api/auth/guest-session?deviceId=${encodeURIComponent(deviceFingerprint)}&deviceType=${encodeURIComponent(hwSpecs.deviceType)}&browser=${encodeURIComponent(hwSpecs.browser)}`
           );
           if (guestRes.ok) {
@@ -323,7 +323,6 @@ export default function App() {
     localStorage.removeItem('maarouf_phone_session');
     setCurrentUser(null);
     setSyncedInSession(false);
-    syncAttemptedRef.current = false;
     setTransactions([]);
     showToast('تم تسجيل الخروج بنجاح.', 'info');
     setTabHistory([]);
@@ -337,10 +336,6 @@ export default function App() {
     if (systemSettings.requirePhoneLogin && (!currentUser || currentUser.isGuest)) {
       setAuthModalOpen(true);
       throw new Error('يرجى تسجيل الدخول برقم هاتفك أولاً للبحث.');
-    }
-    if (!syncedInSession) {
-      setActiveTab('sync');
-      throw new Error('يجب مزامنة جهات الاتصال قبل استخدام البحث.');
     }
 
     const phoneParam = currentUser && !currentUser.isGuest ? `&phone=${currentUser.phone}` : '';
@@ -440,22 +435,6 @@ export default function App() {
     }
   };
 
-  // Returning Android users must complete contact synchronization before
-  // search is unlocked for the current app session.
-  useEffect(() => {
-    if (
-      currentUser &&
-      !currentUser.isGuest &&
-      !legalConsentOpen &&
-      !syncedInSession &&
-      !syncAttemptedRef.current &&
-      window.MaaroufAndroid?.readContacts
-    ) {
-      syncAttemptedRef.current = true;
-      void syncContactsAfterLogin(currentUser);
-    }
-  }, [currentUser, legalConsentOpen, syncedInSession]);
-
   // Play/Simulate Rewarded Ad
   const handlePlayAdReward = async (adId: string) => {
     if (!currentUser) throw new Error('مطلوب تسجيل الدخول للحصول على مكافأة الإعلان.');
@@ -498,7 +477,7 @@ export default function App() {
     // If login requirement changed
     if (!data.settings.requirePhoneLogin && (!currentUser || currentUser.isGuest)) {
       const hwSpecs = getFullDeviceSpecs();
-      const guestRes = await fetch(
+      const guestRes = await apiFetch(
         `/api/auth/guest-session?deviceId=${encodeURIComponent(hwSpecs.deviceId)}&deviceType=${encodeURIComponent(hwSpecs.deviceType)}&browser=${encodeURIComponent(hwSpecs.browser)}`
       );
       if (guestRes.ok) {
@@ -568,7 +547,7 @@ export default function App() {
             <AdBanner 
               ad={adsList.find(ad => ad.status && ad.type === 'banner') || null}
               onAdClick={(id) => {
-                fetch('/api/ads/click', {
+                apiFetch('/api/ads/click', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({ adId: id })
@@ -606,25 +585,16 @@ export default function App() {
                     </button>
                   </div>
                 )}
-                {currentUser && !currentUser.isGuest && !syncedInSession ? (
-                  <div className="mx-auto max-w-xl rounded-3xl border-2 border-[#ffcc00]/50 bg-[#071948]/90 p-7 text-center shadow-2xl" dir="rtl">
-                    <Smartphone className="mx-auto mb-3 h-12 w-12 text-[#ffcc00]" />
-                    <h2 className="text-xl font-black text-white">المزامنة مطلوبة قبل البحث</h2>
-                    <p className="mt-3 text-sm leading-7 text-slate-300">للحفاظ على أمان الدليل، يجب السماح بالوصول إلى جهات الاتصال وإكمال المزامنة مرة واحدة قبل استخدام البحث.</p>
-                    <button type="button" onClick={() => { setActiveTab('sync'); void handleHomeContactsSync(); }} disabled={homeSyncing} className="mt-5 rounded-xl bg-gradient-to-r from-[#ffcc00] to-[#f59e0b] px-6 py-3 font-black text-slate-950 disabled:opacity-50">{homeSyncing ? 'جارٍ المزامنة...' : 'السماح ومزامنة جهات الاتصال'}</button>
-                  </div>
-                ) : (
-                  <SearchSection
-                    currentUser={currentUser}
-                    systemSettings={systemSettings}
-                    onSearch={handleSearchLookup}
-                    setActiveTab={setActiveTab}
-                    onOpenAuth={() => setAuthModalOpen(true)}
-                    showToast={showToast}
-                    onRefreshUser={refreshUserProfile}
-                    adsList={adsList}
-                  />
-                )}
+                <SearchSection
+                  currentUser={currentUser}
+                  systemSettings={systemSettings}
+                  onSearch={handleSearchLookup}
+                  setActiveTab={setActiveTab}
+                  onOpenAuth={() => setAuthModalOpen(true)}
+                  showToast={showToast}
+                  onRefreshUser={refreshUserProfile}
+                  adsList={adsList}
+                />
               </>
             )}
 
@@ -870,10 +840,10 @@ export default function App() {
           setCurrentUser(user);
           localStorage.setItem('maarouf_phone_session', user.phone);
           setSyncedInSession(false);
-          syncAttemptedRef.current = false;
           fetchUserTransactions(user.phone);
           showToast(`مرحباً بك! تم تسجيل الدخول بنجاح للرقم ${user.phone}`, 'success');
           window.dispatchEvent(new CustomEvent('maarouf:metrics-updated'));
+          void syncContactsAfterLogin(user);
         }}
         showToast={showToast}
       />

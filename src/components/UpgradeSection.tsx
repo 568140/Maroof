@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { Award, Crown, Check, MessageCircle, Sparkles, ShieldCheck, Zap, RefreshCw, Star, Info, PhoneCall } from 'lucide-react';
 import { User, VipPlan, SystemSettings } from '../types';
 import { APP_LOGO } from '../assets/logoBase64';
+import { apiFetch } from '../utils/apiHelper';
 
 interface UpgradeSectionProps {
   currentUser: User | null;
@@ -30,7 +31,7 @@ export default function UpgradeSection({
   const fetchPlans = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/vip-plans');
+      const res = await apiFetch('/api/vip-plans');
       if (res.ok) {
         const data: VipPlan[] = await res.json();
         setPlans(data.filter(p => p.isActive));
