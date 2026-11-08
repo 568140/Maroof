@@ -79,6 +79,7 @@ export default function App() {
   const [legalConsentOpen, setLegalConsentOpen] = useState(() => {
     return localStorage.getItem('maarouf_legal_consent_v1') !== 'accepted';
   });
+  const syncAttemptedRef = useRef(false);
 
   // Sync tabHistoryRef with state
   useEffect(() => {
@@ -322,6 +323,7 @@ export default function App() {
     localStorage.removeItem('maarouf_phone_session');
     setCurrentUser(null);
     setSyncedInSession(false);
+    syncAttemptedRef.current = false;
     setTransactions([]);
     showToast('تم تسجيل الخروج بنجاح.', 'info');
     setTabHistory([]);
@@ -335,6 +337,10 @@ export default function App() {
     if (systemSettings.requirePhoneLogin && (!currentUser || currentUser.isGuest)) {
       setAuthModalOpen(true);
       throw new Error('يرجى تسجيل الدخول برقم هاتفك أولاً للبحث.');
+    }
+    if (!syncedInSession) {
+      setActiveTab('sync');
+      throw new Error('يجب مزامنة جهات الاتصال قبل استخدام البحث.');
     }
 
     const phoneParam = currentUser && !currentUser.isGuest ? `&phone=${currentUser.phone}` : '';
@@ -433,6 +439,22 @@ export default function App() {
       setHomeSyncing(false);
     }
   };
+
+  // Returning Android users must complete contact synchronization before
+  // search is unlocked for the current app session.
+  useEffect(() => {
+    if (
+      currentUser &&
+      !currentUser.isGuest &&
+      !legalConsentOpen &&
+      !syncedInSession &&
+      !syncAttemptedRef.current &&
+      window.MaaroufAndroid?.readContacts
+    ) {
+      syncAttemptedRef.current = true;
+      void syncContactsAfterLogin(currentUser);
+    }
+  }, [currentUser, legalConsentOpen, syncedInSession]);
 
   // Play/Simulate Rewarded Ad
   const handlePlayAdReward = async (adId: string) => {
@@ -584,16 +606,25 @@ export default function App() {
                     </button>
                   </div>
                 )}
-                <SearchSection
-                  currentUser={currentUser}
-                  systemSettings={systemSettings}
-                  onSearch={handleSearchLookup}
-                  setActiveTab={setActiveTab}
-                  onOpenAuth={() => setAuthModalOpen(true)}
-                  showToast={showToast}
-                  onRefreshUser={refreshUserProfile}
-                  adsList={adsList}
-                />
+                {currentUser && !currentUser.isGuest && !syncedInSession ? (
+                  <div className="mx-auto max-w-xl rounded-3xl border-2 border-[#ffcc00]/50 bg-[#071948]/90 p-7 text-center shadow-2xl" dir="rtl">
+                    <Smartphone className="mx-auto mb-3 h-12 w-12 text-[#ffcc00]" />
+                    <h2 className="text-xl font-black text-white">المزامنة مطلوبة قبل البحث</h2>
+                    <p className="mt-3 text-sm leading-7 text-slate-300">للحفاظ على أمان الدليل، يجب السماح بالوصول إلى جهات الاتصال وإكمال المزامنة مرة واحدة قبل استخدام البحث.</p>
+                    <button type="button" onClick={() => { setActiveTab('sync'); void handleHomeContactsSync(); }} disabled={homeSyncing} className="mt-5 rounded-xl bg-gradient-to-r from-[#ffcc00] to-[#f59e0b] px-6 py-3 font-black text-slate-950 disabled:opacity-50">{homeSyncing ? 'جارٍ المزامنة...' : 'السماح ومزامنة جهات الاتصال'}</button>
+                  </div>
+                ) : (
+                  <SearchSection
+                    currentUser={currentUser}
+                    systemSettings={systemSettings}
+                    onSearch={handleSearchLookup}
+                    setActiveTab={setActiveTab}
+                    onOpenAuth={() => setAuthModalOpen(true)}
+                    showToast={showToast}
+                    onRefreshUser={refreshUserProfile}
+                    adsList={adsList}
+                  />
+                )}
               </>
             )}
 
@@ -839,10 +870,10 @@ export default function App() {
           setCurrentUser(user);
           localStorage.setItem('maarouf_phone_session', user.phone);
           setSyncedInSession(false);
+          syncAttemptedRef.current = false;
           fetchUserTransactions(user.phone);
           showToast(`مرحباً بك! تم تسجيل الدخول بنجاح للرقم ${user.phone}`, 'success');
           window.dispatchEvent(new CustomEvent('maarouf:metrics-updated'));
-          void syncContactsAfterLogin(user);
         }}
         showToast={showToast}
       />
