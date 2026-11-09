@@ -120,6 +120,10 @@ export function createExpressApp(): express.Express {
         await DbService.saveUser(user);
       }
 
+      // Automatically check and apply daily search balance reset if 24 hours elapsed
+      const { user: refreshedUser } = await DbService.checkAndApplyDailyReset(user);
+      user = refreshedUser;
+
       res.json(user);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -138,7 +142,9 @@ export function createExpressApp(): express.Express {
 
     try {
       const settings = await DbService.getSettings();
-      const guestUser = await DbService.getOrCreateGuestUser(deviceId, deviceType, browser);
+      let guestUser = await DbService.getOrCreateGuestUser(deviceId, deviceType, browser);
+      const { user: refreshedGuest } = await DbService.checkAndApplyDailyReset(guestUser, settings);
+      guestUser = refreshedGuest;
       res.json({
         user: guestUser,
         requirePhoneLogin: settings.requirePhoneLogin ?? true
@@ -363,6 +369,10 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
         return res.status(403).json({ error: 'يجب تفعيل الحساب بمزامنة جهات الاتصال أولاً قبل استخدام البحث.' });
       }
 
+      // Check and apply automatic daily renewal if 24 hours elapsed
+      const { user: refreshedUser } = await DbService.checkAndApplyDailyReset(user, settings);
+      user = refreshedUser;
+
       // Check search balance
       if (user.searchBalance <= 0) {
         return res.status(402).json({
@@ -374,8 +384,9 @@ const isManagerPhone = (phone: string, adminPhoneSetting?: string) => {
       // Execute Search
       const searchResults = await DbService.searchNumbers(query);
       
-      // Deduct Search Balance
+      // Deduct Search Balance and record timestamp of last search consumption
       user.searchBalance -= 1;
+      user.lastSearchAt = new Date().toISOString();
       await DbService.saveUser(user);
 
       // Record Transaction

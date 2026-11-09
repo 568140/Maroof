@@ -67,7 +67,10 @@ const DEFAULT_SETTINGS: SystemSettings = {
   allowRevealRegistrarGlobal: false,
   googleAdSenseEnabled: false,
   googleAdSenseClientId: '',
-  googleAdSenseSlotId: ''
+  googleAdSenseSlotId: '',
+  autoDailyResetEnabled: true,
+  autoDailyResetIntervalHours: 24,
+  rewardsSectionEnabled: true
 };
 
 // Seed Ads starting purely at 0 views and clicks
@@ -236,6 +239,51 @@ export class DbService {
     await setDoc(doc(db, 'users', user.id), user, { merge: true });
     this.clearMetricsCache();
     return user;
+  }
+
+  public static async checkAndApplyDailyReset(user: User, settings?: SystemSettings): Promise<{ user: User; resetApplied: boolean }> {
+    if (!user) return { user, resetApplied: false };
+    const sysSettings = settings || await this.getSettings();
+    if (sysSettings.autoDailyResetEnabled === false) {
+      return { user, resetApplied: false };
+    }
+    // Only apply if user is activated (contacts synced or registered)
+    if (!user.contactsSynced) {
+      return { user, resetApplied: false };
+    }
+
+    const intervalHours = sysSettings.autoDailyResetIntervalHours && sysSettings.autoDailyResetIntervalHours > 0
+      ? sysSettings.autoDailyResetIntervalHours
+      : 24;
+    const intervalMs = intervalHours * 60 * 60 * 1000;
+
+    const referenceTimestamp = user.lastSearchAt || user.lastDailyResetAt || user.createdAt;
+    const referenceTime = referenceTimestamp ? new Date(referenceTimestamp).getTime() : 0;
+    const now = Date.now();
+
+    const isEligibleForReset = (now - referenceTime) >= intervalMs;
+    const targetBalance = Number(sysSettings.dailySearchBalance) || 3;
+
+    if (isEligibleForReset && (user.searchBalance < targetBalance)) {
+      user.searchBalance = targetBalance;
+      user.lastDailyResetAt = new Date().toISOString();
+      await this.saveUser(user);
+
+      try {
+        await this.addTransaction({
+          userId: user.id,
+          userPhone: user.phone,
+          action: `تجديد رصيد البحث المجاني الدوري (${targetBalance} عمليات بحث)`,
+          amount: targetBalance
+        });
+      } catch (txErr) {
+        console.warn('Could not record daily reset tx:', txErr);
+      }
+
+      return { user, resetApplied: true };
+    }
+
+    return { user, resetApplied: false };
   }
 
   public static async deleteUser(id: string): Promise<boolean> {

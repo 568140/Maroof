@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShieldCheck, Users, Database, Eye, TrendingUp, DollarSign, Settings, Search, Trash2, 
   UserX, UserCheck, Plus, Upload, Check, ToggleLeft, ToggleRight, Sparkles, RefreshCw, AlertTriangle, ShieldAlert, Edit3, X,
-  Download, FileSpreadsheet, Copy, ChevronLeft, ChevronRight, Filter, Key, Award, ExternalLink, Crown
+  Download, FileSpreadsheet, Copy, ChevronLeft, ChevronRight, Filter, Key, Award, ExternalLink, Crown,
+  Clock, RotateCcw, Gift
 } from 'lucide-react';
 import { User, Contact, Ad, SystemSettings, AnalyticsStats, VipPlan, DeletedNameRecord } from '../types';
 import { apiFetch } from '../utils/apiHelper';
@@ -123,7 +124,10 @@ export default function AdminDashboard({
     adminPhone: '774919194',
     requirePhoneLogin: true,
     allowRevealRegistrarGlobal: false,
-    allowDeleteNamesGlobal: false
+    allowDeleteNamesGlobal: false,
+    autoDailyResetEnabled: settings?.autoDailyResetEnabled ?? true,
+    autoDailyResetIntervalHours: settings?.autoDailyResetIntervalHours ?? 24,
+    rewardsSectionEnabled: settings?.rewardsSectionEnabled ?? true
   });
 
   // Calculate unique contributors
@@ -2442,6 +2446,97 @@ export default function AdminDashboard({
                       {localSettings.allowRevealRegistrarGlobal
                         ? 'مفعل للجميع: يمكن لأي مستخدم في نتائج البحث الضغط على «من سجّل هذا الاسم؟» ومعرفة صاحب الحساب الذي زامن هذا الاسم مجاناً.'
                         : 'حصر بالمشتركين (VIP): تظل الميزة حصرية للمستخدمين المفعلة لهم خطة باقة كاشف المسجل من لوحة الإدارة، وتظهر نافذة ترقية مع زر تواصل واتساب للبقية.'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Auto 24-Hour Daily Search Balance Reset */}
+              <div className="p-4 rounded-xl bg-gradient-to-r from-[#071948] to-[#0a276e] border-2 border-[#0d52ff]/40 space-y-4 shadow-lg">
+                <div className="flex items-center justify-between gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setLocalSettings({ ...localSettings, autoDailyResetEnabled: localSettings.autoDailyResetEnabled === false ? true : false })}
+                    className="text-[#ffcc00] transition-transform active:scale-95 shrink-0 cursor-pointer"
+                    title={localSettings.autoDailyResetEnabled !== false ? 'انقر للتعطيل' : 'انقر للتفعيل'}
+                  >
+                    {localSettings.autoDailyResetEnabled !== false ? <ToggleRight className="w-11 h-11 text-green-400" /> : <ToggleLeft className="w-11 h-11 text-gray-500" />}
+                  </button>
+                  <div className="text-right flex-1">
+                    <div className="flex items-center gap-2 justify-end">
+                      <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${localSettings.autoDailyResetEnabled !== false ? 'bg-green-500/20 text-green-300 border border-green-500/30' : 'bg-gray-500/20 text-gray-300 border border-gray-500/30'}`}>
+                        {localSettings.autoDailyResetEnabled !== false ? 'التجديد الدوري: مفعل كل 24 ساعة' : 'معطل: رصيد لمرة واحدة فقط'}
+                      </span>
+                      <span className="text-white text-sm font-extrabold flex items-center gap-1.5">
+                        <RotateCcw className="w-4 h-4 text-[#ffcc00]" />
+                        <span>التجديد التلقائي لرصيد البحث المجاني كل 24 ساعة</span>
+                      </span>
+                    </div>
+                    <span className="text-gray-300 text-[11px] block mt-1.5 leading-relaxed">
+                      {localSettings.autoDailyResetEnabled !== false
+                        ? 'مفعل: يتم تجديد رصيد البحث تلقائياً لجميع المستخدمين بعد مرور 24 ساعة من تاريخ آخر استهلاك للرصيد، وإعادتهم للحد اليومي المجاني.'
+                        : 'معطل: لا يتم تجديد الرصيد تلقائياً بعد استهلاكه، ويحصل المستخدم على رصيد إضافي فقط عبر مشاهدة الإعلانات أو تحويل النقاط أو شحن الإدارة.'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-white/10">
+                  <div className="space-y-1 text-right">
+                    <label className="text-[10px] text-gray-300 font-bold flex items-center gap-1 justify-end">
+                      <span>عدد عمليات البحث المجانية الممنوحة يومياً</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={localSettings.dailySearchBalance}
+                      onChange={(e) => setLocalSettings({ ...localSettings, dailySearchBalance: Number(e.target.value) })}
+                      className="w-full p-2 bg-black/50 border border-white/20 rounded-lg text-white font-mono text-xs focus:border-[#ffcc00] outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1 text-right">
+                    <label className="text-[10px] text-gray-300 font-bold flex items-center gap-1 justify-end">
+                      <Clock className="w-3.5 h-3.5 text-[#ffcc00]" />
+                      <span>دورة التجديد بالساعات (افتراضياً 24 ساعة)</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="168"
+                      value={localSettings.autoDailyResetIntervalHours ?? 24}
+                      onChange={(e) => setLocalSettings({ ...localSettings, autoDailyResetIntervalHours: Number(e.target.value) })}
+                      className="w-full p-2 bg-black/50 border border-white/20 rounded-lg text-white font-mono text-xs focus:border-[#ffcc00] outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Toggle Rewards & Earnings Section */}
+              <div className="p-4 rounded-xl bg-gradient-to-r from-[#18230f] to-[#243317] border-2 border-emerald-500/40 space-y-3 shadow-lg">
+                <div className="flex items-center justify-between gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setLocalSettings({ ...localSettings, rewardsSectionEnabled: localSettings.rewardsSectionEnabled === false ? true : false })}
+                    className="text-emerald-400 transition-transform active:scale-95 shrink-0 cursor-pointer"
+                    title={localSettings.rewardsSectionEnabled !== false ? 'انقر للتعطيل' : 'انقر للتفعيل'}
+                  >
+                    {localSettings.rewardsSectionEnabled !== false ? <ToggleRight className="w-11 h-11 text-emerald-400" /> : <ToggleLeft className="w-11 h-11 text-gray-500" />}
+                  </button>
+                  <div className="text-right flex-1">
+                    <div className="flex items-center gap-2 justify-end">
+                      <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${localSettings.rewardsSectionEnabled !== false ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30'}`}>
+                        {localSettings.rewardsSectionEnabled !== false ? 'القسم نشط وظاهر للمستخدمين' : 'القسم معطل ومخفي بالكامل'}
+                      </span>
+                      <span className="text-white text-sm font-extrabold flex items-center gap-1.5">
+                        <Gift className="w-4 h-4 text-emerald-400" />
+                        <span>إظهار أو إخفاء قسم المكافآت والأرباح</span>
+                      </span>
+                    </div>
+                    <span className="text-gray-300 text-[11px] block mt-1.5 leading-relaxed">
+                      {localSettings.rewardsSectionEnabled !== false
+                        ? 'مفعل: يظهر تبويب «المكافآت والربح» في القائمة الجانبية، ويمكن للمستخدمين مشاهدة الإعلانات لكسب النقاط والأرصدة.'
+                        : 'معطل ومخفي: يتم إخفاء تبويب المكافآت بالكامل ومنع مشاهدة الإعلانات في واجهات المستخدمين.'}
                     </span>
                   </div>
                 </div>

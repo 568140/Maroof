@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Menu, User, Sparkles, Coins, LogOut, ShieldCheck, HelpCircle, Settings, Bell, Search, History, Gift, Crown, Award } from 'lucide-react';
-import { User as UserType } from '../types';
+import { User as UserType, SystemSettings } from '../types';
 import { APP_LOGO } from '../assets/logoBase64';
 import { APP_AVATAR } from '../assets/avatarBase64';
 
@@ -14,6 +14,7 @@ interface HeaderProps {
   onOpenAuth: () => void;
   drawerOpen: boolean;
   setDrawerOpen: (open: boolean) => void;
+  systemSettings?: SystemSettings;
 }
 
 export default function Header({
@@ -25,6 +26,7 @@ export default function Header({
   onOpenAuth,
   drawerOpen,
   setDrawerOpen,
+  systemSettings,
 }: HeaderProps) {
   return (
     <>
@@ -64,8 +66,14 @@ export default function Header({
             <div className="flex items-center gap-2 sm:gap-3">
               {/* Point badge */}
               <div 
-                onClick={() => setActiveTab('rewards')}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0a2368] border border-[#ffcc00]/40 text-xs text-[#ffcc00] font-bold cursor-pointer hover:border-[#ffcc00] shadow-[0_0_10px_rgba(255,204,0,0.2)] transition-all"
+                onClick={() => {
+                  if (systemSettings?.rewardsSectionEnabled !== false) {
+                    setActiveTab('rewards');
+                  }
+                }}
+                className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0a2368] border border-[#ffcc00]/40 text-xs text-[#ffcc00] font-bold shadow-[0_0_10px_rgba(255,204,0,0.2)] transition-all ${
+                  systemSettings?.rewardsSectionEnabled !== false ? 'cursor-pointer hover:border-[#ffcc00]' : 'cursor-default'
+                }`}
               >
                 <Coins className="w-3.5 h-3.5" />
                 <span>{currentUser.points} نقطة</span>
@@ -246,16 +254,18 @@ export default function Header({
               </button>
             )}
 
-            <button
-              onClick={() => {
-                setActiveTab('rewards');
-                setDrawerOpen(false);
-              }}
-              className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-all ${activeTab === 'rewards' ? 'bg-[#c5a059]/15 text-[#e5c158] font-bold' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}
-            >
-              <Gift className="w-4.5 h-4.5" />
-              <span>المكافآت والربح</span>
-            </button>
+            {systemSettings?.rewardsSectionEnabled !== false && (
+              <button
+                onClick={() => {
+                  setActiveTab('rewards');
+                  setDrawerOpen(false);
+                }}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-all ${activeTab === 'rewards' ? 'bg-[#c5a059]/15 text-[#e5c158] font-bold' : 'text-gray-400 hover:bg-white/5 hover:text-white'}`}
+              >
+                <Gift className="w-4.5 h-4.5" />
+                <span>المكافآت والربح</span>
+              </button>
+            )}
 
             {/* VIP Plans & Upgrade Link */}
             <button

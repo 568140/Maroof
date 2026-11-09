@@ -19,6 +19,8 @@ export interface User {
   canDeleteNames?: boolean;
   nameDeletionsLimit?: number;
   nameDeletionsUsed?: number;
+  lastSearchAt?: string;
+  lastDailyResetAt?: string;
 }
 
 export interface Contact {
@@ -79,6 +81,9 @@ export interface SystemSettings {
   googleAdSenseEnabled?: boolean;
   googleAdSenseClientId?: string;
   googleAdSenseSlotId?: string;
+  autoDailyResetEnabled?: boolean;
+  autoDailyResetIntervalHours?: number;
+  rewardsSectionEnabled?: boolean;
 }
 
 export interface AnalyticsStats {

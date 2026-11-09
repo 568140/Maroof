@@ -869,18 +869,33 @@ export default function SearchSection({
             </div>
             <div>
               <h4 className="text-white text-xs font-bold">نفذ رصيدك من عمليات البحث اليومية!</h4>
-              <p className="text-gray-400 text-[10px] mt-0.5">
-                يمكنك كسب عمليات بحث ونقاط إضافية مباشرة وفوراً من خلال تصفح أو مشاهدة الفيديوهات الترويجية.
+              <p className="text-gray-400 text-[10px] mt-0.5 leading-relaxed">
+                {systemSettings?.rewardsSectionEnabled !== false
+                  ? 'يمكنك كسب عمليات بحث ونقاط إضافية مباشرة وفوراً من خلال تصفح أو مشاهدة الفيديوهات الترويجية أو الترقية لباقات VIP.'
+                  : (systemSettings?.autoDailyResetEnabled !== false
+                      ? `سيتجدد رصيدك المجاني تلقائياً بعد مرور ${systemSettings?.autoDailyResetIntervalHours || 24} ساعة، أو يمكنك الترقية إلى إحدى باقات VIP للبحث اللامحدود.`
+                      : 'يمكنك الترقية إلى إحدى باقات VIP لكشف الأرقام المفتوح أو التواصل مع الإدارة.'
+                    )}
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setActiveTab('rewards')}
-            className="w-full py-2 bg-[#e5c158]/10 hover:bg-[#e5c158]/25 text-[#e5c158] border border-[#e5c158]/25 hover:border-[#e5c158] text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5"
-          >
-            <Coins className="w-4 h-4" />
-            <span>شاهد الإعلانات واكسب رصيد مجاني</span>
-          </button>
+          {systemSettings?.rewardsSectionEnabled !== false ? (
+            <button
+              onClick={() => setActiveTab('rewards')}
+              className="w-full py-2 bg-[#e5c158]/10 hover:bg-[#e5c158]/25 text-[#e5c158] border border-[#e5c158]/25 hover:border-[#e5c158] text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5"
+            >
+              <Coins className="w-4 h-4" />
+              <span>شاهد الإعلانات واكسب رصيد مجاني</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => setActiveTab('upgrade')}
+              className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-md active:scale-98"
+            >
+              <Crown className="w-4 h-4" />
+              <span>الترقية إلى باقات VIP للبحث المفتوح</span>
+            </button>
+          )}
         </div>
       )}
 

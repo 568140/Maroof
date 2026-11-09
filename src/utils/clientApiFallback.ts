@@ -127,6 +127,10 @@ export async function handleClientApiRequest(urlStr: string, options?: RequestIn
         await DbService.saveUser(user);
       }
 
+      // Automatically check and apply daily search balance reset if 24 hours elapsed
+      const { user: refreshedUser } = await DbService.checkAndApplyDailyReset(user);
+      user = refreshedUser;
+
       return jsonResponse(user);
     }
 
@@ -140,7 +144,9 @@ export async function handleClientApiRequest(urlStr: string, options?: RequestIn
       }
 
       const settings = await DbService.getSettings();
-      const guestUser = await DbService.getOrCreateGuestUser(deviceId, deviceType, browser);
+      let guestUser = await DbService.getOrCreateGuestUser(deviceId, deviceType, browser);
+      const { user: refreshedGuest } = await DbService.checkAndApplyDailyReset(guestUser, settings);
+      guestUser = refreshedGuest;
       return jsonResponse({
         user: guestUser,
         requirePhoneLogin: settings.requirePhoneLogin ?? true
@@ -337,6 +343,10 @@ export async function handleClientApiRequest(urlStr: string, options?: RequestIn
         return jsonResponse({ error: 'يجب تفعيل الحساب بمزامنة جهات الاتصال أولاً قبل استخدام البحث.' }, 403);
       }
 
+      // Check and apply automatic daily renewal if 24 hours elapsed
+      const { user: refreshedUser } = await DbService.checkAndApplyDailyReset(user, settings);
+      user = refreshedUser;
+
       if (user.searchBalance <= 0) {
         return jsonResponse(
           {
@@ -349,6 +359,7 @@ export async function handleClientApiRequest(urlStr: string, options?: RequestIn
 
       const searchResults = await DbService.searchNumbers(query);
       user.searchBalance -= 1;
+      user.lastSearchAt = new Date().toISOString();
       await DbService.saveUser(user);
 
       await DbService.addTransaction({

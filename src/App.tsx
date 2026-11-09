@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, Smartphone, Award, HelpCircle, ShieldCheck, LogOut, CheckCircle, 
   AlertCircle, Sparkles, Coins, KeyRound, Globe, ArrowRight, Settings, Info,
-  Wallet, Gift, Copy, Check
+  Wallet, Gift, Copy, Check, ShieldAlert
 } from 'lucide-react';
 import Header from './components/Header';
 import SearchSection from './components/SearchSection';
@@ -49,7 +49,10 @@ const DEFAULT_SETTINGS: SystemSettings = {
   logActivity: true,
   adminPhone: '774919194',
   requirePhoneLogin: true,
-  allowRevealRegistrarGlobal: false
+  allowRevealRegistrarGlobal: false,
+  autoDailyResetEnabled: true,
+  autoDailyResetIntervalHours: 24,
+  rewardsSectionEnabled: true
 };
 
 export default function App() {
@@ -578,6 +581,7 @@ export default function App() {
         onOpenAuth={() => setAuthModalOpen(true)}
         drawerOpen={drawerOpen}
         setDrawerOpen={setDrawerOpen}
+        systemSettings={systemSettings}
       />
 
       {/* Main Content Stage */}
@@ -636,7 +640,7 @@ export default function App() {
             )}
 
             {/* REWARDS & ADS TAB */}
-            {activeTab === 'rewards' && (
+            {activeTab === 'rewards' && (systemSettings?.rewardsSectionEnabled !== false ? (
               <RewardsSection
                 currentUser={currentUser}
                 adsList={adsList}
@@ -646,7 +650,24 @@ export default function App() {
                 showToast={showToast}
                 onRefreshUser={refreshUserProfile}
               />
-            )}
+            ) : (
+              <div className="text-center py-20 space-y-4 max-w-md mx-auto bg-[#071948]/40 border border-white/10 rounded-3xl p-8" dir="rtl">
+                <div className="w-14 h-14 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center text-yellow-400 mx-auto">
+                  <ShieldAlert className="w-7 h-7" />
+                </div>
+                <h3 className="text-white font-extrabold text-base">قسم المكافآت معطل حالياً</h3>
+                <p className="text-gray-300 text-xs leading-relaxed">
+                  تم إيقاف قسم المكافآت والأرباح من قبل الإدارة. رصيد البحث الخاص بك يتجدد تلقائياً كل 24 ساعة، أو يمكنك الاشتراك في باقات VIP.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('search')}
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#ffcc00] to-[#f59e0b] hover:from-[#ffe066] hover:to-[#f59e0b] text-slate-950 font-black text-xs transition-all shadow-lg shadow-[#ffcc00]/20"
+                >
+                  العودة إلى شاشة البحث
+                </button>
+              </div>
+            ))}
 
             {/* VIP PLANS & UPGRADE TAB */}
             {activeTab === 'upgrade' && (
