@@ -543,7 +543,7 @@ export default function App() {
         
         {/* Dynamic Banner Ad (Google AdMob / AdSense or custom banner) */}
         {((systemSettings.admobEnabled && systemSettings.admobBanner) || systemSettings.googleAdSenseEnabled) && (
-          <div className="mb-6 max-w-xl mx-auto">
+          <div className="hidden mb-6 max-w-xl mx-auto" style={{ display: 'none' }}>
             <AdBanner 
               ad={adsList.find(ad => ad.status && ad.type === 'banner') || null}
               onAdClick={(id) => {

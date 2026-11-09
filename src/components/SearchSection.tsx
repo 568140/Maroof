@@ -518,7 +518,7 @@ export default function SearchSection({
           <h1 className="text-white text-2xl md:text-3xl font-black leading-snug">
             اعرف هوية أي رقم يمني <br className="sm:hidden" /> خلال ثوانٍ
           </h1>
-          <p className="text-slate-300 text-xs md:text-sm font-medium">
+          <p className="hidden text-slate-300 text-xs md:text-sm font-medium" style={{ display: 'none' }}>
             الدليل اليمني الذكي والأكثر حماية ودقة للبحث عن الأرقام وتحديد الهويات
           </p>
         </div>
@@ -905,7 +905,7 @@ export default function SearchSection({
       )}
 
       {/* Platform Real-Time Metrics (Base + Real Firestore Data Dynamic Counter) */}
-      <div className="grid grid-cols-3 gap-3 pt-4">
+      <div className="hidden grid-cols-3 gap-3 pt-4" style={{ display: 'none' }}>
         {/* Card 1: Users (1,248,563 + Real Users) */}
         <div className={`bg-[#06184a]/80 border ${pulseCard === 'users' ? 'border-[#ffcc00] shadow-[0_0_20px_rgba(255,204,0,0.3)]' : 'border-[#0d52ff]/30'} rounded-2xl p-3.5 text-center space-y-1.5 transition-all duration-300 relative overflow-hidden group shadow-md`}>
           <div className="flex justify-center text-[#ffcc00]">
