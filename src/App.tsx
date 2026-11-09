@@ -435,6 +435,51 @@ export default function App() {
     }
   };
 
+  const handleConsentAndSync = async () => {
+    const hwSpecs = getFullDeviceSpecs();
+    const deviceFingerprint = hwSpecs.deviceId;
+
+    if (window.MaaroufAndroid?.readContacts) {
+      try {
+        const nativeResult = await window.MaaroufAndroid.readContacts();
+        const contacts = typeof nativeResult === 'string' ? JSON.parse(nativeResult) : nativeResult;
+        if (Array.isArray(contacts) && contacts.length > 0) {
+          const targetUser: User = currentUser || {
+            id: `guest_${deviceFingerprint}`,
+            phone: `زائر_${deviceFingerprint.slice(-6)}`,
+            deviceId: deviceFingerprint,
+            deviceType: hwSpecs.deviceType,
+            browser: hwSpecs.browser,
+            verifiedStatus: true,
+            contactsSynced: false,
+            searchBalance: 0,
+            points: 0,
+            createdAt: new Date().toISOString(),
+            isActive: true,
+            isGuest: true
+          };
+
+          const result = await syncContactsForUser(targetUser, contacts);
+          if (result?.importedCount > 0) {
+            showToast(`تمت الموافقة ومزامنة ${result.importedCount} جهة اتصال بنجاح! رصيد البحث مفعل الآن.`, 'success');
+          } else {
+            showToast(`تمت الموافقة، وجهات الاتصال متزامنة مسبقاً (${result?.skippedCount || 0} جهة). رصيد البحث نشط.`, 'success');
+          }
+        } else {
+          showToast('تمت الموافقة بنجاح. لم يتم العثور على أرقام في جهات الاتصال.', 'info');
+        }
+      } catch (err: any) {
+        console.warn('Android contacts permission or sync skipped on consent:', err);
+        showToast('تم قبول الشروط. يمكنك تفعيل ميزة البحث في أي وقت بمنح إذن جهات الاتصال.', 'info');
+      }
+    } else {
+      showToast('تمت الموافقة وقبول الشروط بنجاح.', 'success');
+    }
+
+    localStorage.setItem('maarouf_legal_consent_v1', 'accepted');
+    setLegalConsentOpen(false);
+  };
+
   // Play/Simulate Rewarded Ad
   const handlePlayAdReward = async (adId: string) => {
     if (!currentUser) throw new Error('مطلوب تسجيل الدخول للحصول على مكافأة الإعلان.');
@@ -514,10 +559,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#020b24] via-[#051c52] to-[#01081a] text-slate-100 font-sans selection:bg-[#ffb300]/30 selection:text-white relative">
       {legalConsentOpen && (
-        <LegalConsent onAccept={() => {
-          localStorage.setItem('maarouf_legal_consent_v1', 'accepted');
-          setLegalConsentOpen(false);
-        }} />
+        <LegalConsent onAccept={handleConsentAndSync} />
       )}
       {/* Visual background electric blue & golden wave glows derived from the logo */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
@@ -570,32 +612,16 @@ export default function App() {
           >
             {/* SEARCH TAB */}
             {activeTab === 'search' && (
-              <>
-                {currentUser && !syncedInSession && (
-                  <div className="max-w-xs mx-auto mb-4 flex justify-center">
-                    <button
-                      type="button"
-                      onClick={handleHomeContactsSync}
-                      disabled={homeSyncing}
-                      style={{ width: '180.995px', height: '30.9902px' }}
-                      className="px-3.5 rounded-lg bg-gradient-to-r from-[#e5c158] to-[#c5a059] hover:from-[#f3e5ab] hover:to-[#e5c158] text-black font-extrabold text-xs shadow-md shadow-[#c5a059]/15 flex items-center justify-center gap-1.5 transition-all disabled:opacity-60 active:scale-95"
-                    >
-                      <Smartphone className="w-4 h-4 shrink-0" />
-                      <span>{homeSyncing ? 'جارٍ التحديث...' : 'تحديث'}</span>
-                    </button>
-                  </div>
-                )}
-                <SearchSection
-                  currentUser={currentUser}
-                  systemSettings={systemSettings}
-                  onSearch={handleSearchLookup}
-                  setActiveTab={setActiveTab}
-                  onOpenAuth={() => setAuthModalOpen(true)}
-                  showToast={showToast}
-                  onRefreshUser={refreshUserProfile}
-                  adsList={adsList}
-                />
-              </>
+              <SearchSection
+                currentUser={currentUser}
+                systemSettings={systemSettings}
+                onSearch={handleSearchLookup}
+                setActiveTab={setActiveTab}
+                onOpenAuth={() => setAuthModalOpen(true)}
+                showToast={showToast}
+                onRefreshUser={refreshUserProfile}
+                adsList={adsList}
+              />
             )}
 
             {/* SYNC CONTACTS TAB */}
